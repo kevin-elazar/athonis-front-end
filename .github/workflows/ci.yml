@@ -101,3 +101,15 @@ jobs:
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.SENTRY_DSN_WEB }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy em staging
+    needs: imagem
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/desenvMobile' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ambiente: staging
+      imagem: sha-${{ github.sha }}
