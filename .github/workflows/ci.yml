@@ -1,0 +1,103 @@
+# Integração contínua do painel web (Next.js).
+#
+# Em todo push e pull request: lint, typecheck, testes com cobertura (Vitest,
+# limite mínimo no vitest.config.ts), build de produção e SonarCloud. Em push
+# nas branches principais publica a imagem Docker no GHCR, já apontando para a
+# API do ambiente certo (staging ou produção).
+name: CI
+
+on:
+  push:
+    branches: [master, desenvMobile]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    name: Lint, typecheck, testes e build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - name: Testes com cobertura
+        run: npm run test:cov
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.example.invalid
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  sonarcloud:
+    name: SonarCloud
+    needs: qualidade
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+      - name: Análise
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v5
+      - name: Aviso de configuração
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "::warning::SONAR_TOKEN não configurado; análise do SonarCloud pulada."
+
+  imagem:
+    name: Imagem Docker (GHCR)
+    needs: qualidade
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/athonis-web
+          tags: |
+            type=sha,format=long
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/desenvMobile' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/master' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # O endereço da API entra no bundle do Next no build.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ github.ref == 'refs/heads/master' && vars.PRODUCTION_API_URL || vars.STAGING_API_URL }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.SENTRY_DSN_WEB }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
