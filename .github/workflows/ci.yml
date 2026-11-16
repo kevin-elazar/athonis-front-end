@@ -31,6 +31,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Os tipos globais do App Router (LayoutProps, PageProps...) são gerados pelo Next.
+      - run: npx next typegen
       - run: npx tsc --noEmit
       - name: Testes com cobertura
         run: npm run test:cov
