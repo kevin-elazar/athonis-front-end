@@ -28,6 +28,9 @@ export function useTheme() {
   // resetando o <html> ao atributo padrão no remount.
   useLayoutEffect(() => {
     const stored = (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "system";
+    // localStorage só existe no navegador: ler no render quebraria a
+    // hidratação, então o valor salvo entra logo após a montagem.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeState(stored);
     applyTheme(stored);
   }, []);

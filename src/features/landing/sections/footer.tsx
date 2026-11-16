@@ -38,7 +38,7 @@ const COLUMNS = [
     links: [
       { label: "Fale conosco", href: "#" },
       { label: "Termos de uso", href: "#" },
-      { label: "Privacidade", href: "#" },
+      { label: "Privacidade", href: "/privacidade" },
     ],
   },
 ];
