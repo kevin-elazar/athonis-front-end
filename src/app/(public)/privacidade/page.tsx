@@ -104,8 +104,9 @@ export default function PrivacidadePage() {
               <strong>Sentry:</strong> recebe registros de erro técnicos, para correção de falhas.
             </li>
             <li>
-              <strong>Hospedagem:</strong> os dados ficam num servidor privado virtual (VPS) contratado
-              para o projeto, com acesso protegido por HTTPS.
+              <strong>Hospedagem:</strong> os dados ficam num servidor privado virtual (VPS) cedido ao
+              projeto por um terceiro, que tem acesso administrativo à máquina e se compromete a não
+              acessar os dados. O acesso pela internet é protegido por HTTPS.
             </li>
           </ul>
         </section>
