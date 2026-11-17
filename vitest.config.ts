@@ -37,6 +37,10 @@ export default defineConfig({
         "src/app/(public)/**",
         "src/**/index.ts",
         "src/**/*.d.ts",
+        // Mapa Leaflet: depende de canvas/DOM real que o jsdom não tem; é
+        // testado pelo uso no navegador (as telas que o usam têm teste com o mapa simulado).
+        "src/components/domain/track-map.tsx",
+        "src/components/domain/route-map.tsx",
       ],
       thresholds: {
         lines: 30,
