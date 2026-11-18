@@ -279,6 +279,10 @@ import { DriverAccessDialog } from "./drivers/driver-access-dialog";
 import { DuplicateRouteDialog } from "./routes/duplicate-route-dialog";
 import { RouteTrack } from "./tracking/route-track";
 import TrackingPage from "@/app/(app)/tracking/page";
+import DriversPage from "@/app/(app)/drivers/page";
+import { CurrentUserProvider } from "./auth/current-user";
+import { routesApi } from "@/lib/api/resources";
+import { ApiError } from "@/lib/api/errors";
 import AnalyticsPage from "@/app/(app)/analytics/page";
 import RoutesPage from "@/app/(app)/routes/page";
 
@@ -286,7 +290,7 @@ function renderWithQuery(ui: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
 
 beforeEach(() => {
@@ -397,6 +401,9 @@ describe("acompanhamento", () => {
 
   it("percursos: escolhe uma rota do histórico", async () => {
     renderWithQuery(<TrackingPage />);
+    await screen.findByText("Carla");
+    // Aba escondida não monta: nada de buscar o histórico antes de abri-la.
+    expect(actions.getFieldRoutes).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("tab", { name: "Percursos" }));
     await waitFor(() => expect(actions.getFieldRoutes).toHaveBeenCalled());
   });
@@ -408,7 +415,111 @@ describe("acompanhamento", () => {
   });
 });
 
+describe("acompanhamento: falhas", () => {
+  it("falha ao atualizar mantém o mapa e avisa", async () => {
+    const { client } = renderWithQuery(<TrackingPage />);
+    expect(await screen.findByText("Carla")).toBeInTheDocument();
+    actions.getLiveRoutes.mockResolvedValue({ ok: false, message: "API fora do ar" });
+    await client.refetchQueries({ queryKey: ["live-routes"] });
+    expect(await screen.findByText("Atualização falhou")).toBeInTheDocument();
+    expect(screen.getByText("Carla")).toBeInTheDocument();
+    expect(screen.getByTestId("track-map")).toBeInTheDocument();
+  });
+
+  it("sem dados, a falha mostra a tela de erro", async () => {
+    actions.getLiveRoutes.mockRejectedValue(new Error("x"));
+    renderWithQuery(<TrackingPage />);
+    expect(await screen.findByRole("button", { name: /tentar novamente/i })).toBeInTheDocument();
+    expect(screen.queryByText("Carla")).not.toBeInTheDocument();
+  });
+
+  it("falha no percurso da rota selecionada vira aviso", async () => {
+    actions.getRouteComparison.mockResolvedValue({ ok: false, message: "Rota não encontrada" });
+    renderWithQuery(<TrackingPage />);
+    expect(await screen.findByText(/Não foi possível carregar o percurso/)).toBeInTheDocument();
+    expect(screen.getByTestId("track-map")).toBeInTheDocument();
+  });
+});
+
+describe("resultado das Server Actions", () => {
+  it("a mensagem real do backend chega ao usuário", async () => {
+    actions.getFieldOverview.mockResolvedValue({ ok: false, message: "Período inválido", status: 400 });
+    renderWithQuery(<FieldExecutionPanel />);
+    expect(await screen.findByRole("button", { name: /tentar/i })).toBeInTheDocument();
+  });
+
+  it("resultado ok é desembrulhado", async () => {
+    actions.getLiveRoutes.mockResolvedValue({ ok: true, data: aoVivo });
+    renderWithQuery(<TrackingPage />);
+    expect(await screen.findByText("Carla")).toBeInTheDocument();
+  });
+
+  it("falha vira ApiError com a mensagem e os erros por campo do backend", async () => {
+    actions.duplicateRoute.mockResolvedValue({
+      ok: false,
+      message: "Rota já foi duplicada",
+      status: 409,
+      fieldErrors: [{ field: "route_id", messages: ["duplicada"] }],
+    });
+    const falha = await routesApi.duplicate("7", {}).catch((error: unknown) => error);
+    expect(falha).toBeInstanceOf(ApiError);
+    expect(falha).toMatchObject({ message: "Rota já foi duplicada", status: 409 });
+    expect((falha as ApiError).fieldErrors).toHaveLength(1);
+  });
+
+  it("remoção ok devolve vazio", async () => {
+    actions.deleteRoute.mockResolvedValue({ ok: true, data: undefined });
+    await expect(routesApi.remove("7")).resolves.toBeUndefined();
+  });
+});
+
+describe("motoristas: acesso ao aplicativo só para admin", () => {
+  async function abrirAcoes(role?: string) {
+    renderWithQuery(
+      <CurrentUserProvider role={role}>
+        <DriversPage />
+      </CurrentUserProvider>,
+    );
+    const [acoes] = await screen.findAllByRole("button", { name: "Ações" });
+    await userEvent.click(acoes);
+  }
+
+  it("admin vê a ação", async () => {
+    await abrirAcoes("admin");
+    expect(await screen.findByText("Acesso ao aplicativo")).toBeInTheDocument();
+  });
+
+  it("outros papéis não veem", async () => {
+    await abrirAcoes("operator");
+    expect(await screen.findByText("Editar")).toBeInTheDocument();
+    expect(screen.queryByText("Acesso ao aplicativo")).not.toBeInTheDocument();
+  });
+});
+
 describe("acesso do motorista ao aplicativo", () => {
+  it("desligar pede confirmação antes de chamar a API", async () => {
+    actions.getDriverAccess.mockResolvedValue({ driverId: "1", hasAccess: true, email: "bruno@x.com", isActive: true, lastLogin: null });
+    actions.revokeDriverAccess.mockResolvedValue(undefined);
+    renderWithQuery(<DriverAccessDialog driver={motorista} onClose={vi.fn()} />);
+    const dialogo = await screen.findByRole("dialog");
+    await within(dialogo).findByDisplayValue("bruno@x.com");
+    await userEvent.click(within(dialogo).getByRole("button", { name: "Desligar acesso" }));
+    expect(actions.revokeDriverAccess).not.toHaveBeenCalled();
+    // A confirmação abre por cima do dialog do acesso (que fica inerte).
+    const titulo = await screen.findByText("Desligar o acesso de Bruno?");
+    const confirmacao = titulo.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(confirmacao).getByText("Desligar acesso"));
+    await waitFor(() => expect(actions.revokeDriverAccess).toHaveBeenCalledWith("1"));
+  });
+
+  it("não deixa salvar quando a consulta do acesso falhou", async () => {
+    actions.getDriverAccess.mockRejectedValue(new Error("fora do ar"));
+    renderWithQuery(<DriverAccessDialog driver={motorista} onClose={vi.fn()} />);
+    const dialogo = await screen.findByRole("dialog");
+    expect(await within(dialogo).findByText("Não foi possível consultar")).toBeInTheDocument();
+    expect(within(dialogo).getByRole("button", { name: /criar acesso/i })).toBeDisabled();
+  });
+
   it("cria o acesso com e-mail e senha", async () => {
     actions.getDriverAccess.mockResolvedValue({ driverId: "1", hasAccess: false, email: null, isActive: false, lastLogin: null });
     actions.grantDriverAccess.mockResolvedValue({ driverId: "1", hasAccess: true, email: "bruno@x.com", isActive: true, lastLogin: null });
@@ -430,12 +541,7 @@ describe("acesso do motorista ao aplicativo", () => {
     renderWithQuery(<DriverAccessDialog driver={motorista} onClose={vi.fn()} />);
     const dialogo = await screen.findByRole("dialog");
     expect(await within(dialogo).findByDisplayValue("bruno@x.com")).toBeInTheDocument();
-    const desligar = within(dialogo).queryByRole("button", { name: /desligar|revogar|remover/i });
-    if (desligar) {
-      await userEvent.click(desligar);
-      const confirmar = screen.queryAllByRole("button", { name: /desligar|confirmar|revogar/i }).at(-1);
-      if (confirmar) await userEvent.click(confirmar);
-    }
+    expect(within(dialogo).getByRole("button", { name: "Desligar acesso" })).toBeEnabled();
   });
 
   it("valida senha curta sem chamar a API", async () => {
