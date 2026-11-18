@@ -362,9 +362,26 @@ export async function optimizeRoutes(orderIds: string[]): Promise<
   }>
 > {
   return request(async (api) => {
-    const { data } = await api.post("/optimization-routes/optimize", {
-      orderIds: orderIds.map(Number),
-    });
+    const { data } = await api
+      .post("/optimization-routes/optimize", { orderIds: orderIds.map(Number) })
+      .catch((error: unknown) => {
+        // Quando nenhum pedido é roteirizável, a API manda o motivo de cada
+        // um; sem isso a tela mostrava só "nenhum pedido válido".
+        const payload = (
+          error as {
+            response?: {
+              data?: { message?: unknown; unassignedOrders?: Array<{ orderId: number; reason: string }> };
+            };
+          }
+        ).response?.data;
+        if (payload?.unassignedOrders?.length) {
+          const motivos = payload.unassignedOrders
+            .map((item) => `pedido ${item.orderId}: ${item.reason}`)
+            .join("; ");
+          payload.message = `${String(payload.message ?? "Nenhum pedido pôde ser roteirizado")} (${motivos})`;
+        }
+        throw error;
+      });
     return {
       totalRoutes: data?.totalRoutes ?? 0,
       simulated: data?.simulated ?? false,

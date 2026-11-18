@@ -27,6 +27,11 @@ export type GenerateRouteDialogProps = {
  * uma otimização que já se sabe que vai excluir o pedido.
  */
 function blockingReason(order: Order): string | null {
+  // Um pedido pertence a uma rota só (order.route_id): roteirizar de novo
+  // criaria duas rotas disputando a mesma entrega. Para mudar, cancele ou
+  // exclua a rota atual e o pedido volta para a fila.
+  if (order.routeId) return `Já está na Rota #${order.routeId}`;
+  if (order.status === "in_route") return "Em rota";
   if (!order.driverId && !order.vehicleId) return "Sem motorista e sem veículo";
   if (!order.vehicleId) return "Sem veículo";
   if (!order.driverId) return "Sem motorista";
@@ -50,6 +55,8 @@ export function GenerateRouteDialog({
     const query = search.trim().toLowerCase();
     return orders
       .map((order) => ({ order, blocked: blockingReason(order) }))
+      // Os disponíveis primeiro; os bloqueados ficam no fim, com o motivo.
+      .sort((a, b) => Number(!!a.blocked) - Number(!!b.blocked))
       .filter(({ order }) =>
         query
           ? order.title.toLowerCase().includes(query) ||

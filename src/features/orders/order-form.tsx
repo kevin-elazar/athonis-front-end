@@ -407,7 +407,7 @@ export function OrderForm({
               Atribuição
             </Text>
             <Text size="caption" color="muted">
-              Motorista e veículo são obrigatórios para que o pedido entre numa rota.
+              Motorista e veículo definem em qual rota o pedido entra.
             </Text>
 
             <Grid columns={1} gap={4} className="[&>*]:min-w-0 sm:grid-cols-3">
@@ -417,7 +417,9 @@ export function OrderForm({
                 render={({ field }) => (
                   <Select
                     label="Motorista"
-                    placeholder="Sem motorista"
+                    placeholder="Selecione"
+                    required
+                    error={errors.driverId?.message}
                     emptyMessage="Nenhum motorista cadastrado"
                     options={driverOptions}
                     value={field.value ? [field.value] : []}
@@ -432,7 +434,9 @@ export function OrderForm({
                 render={({ field }) => (
                   <Select
                     label="Veículo"
-                    placeholder="Sem veículo"
+                    placeholder="Selecione"
+                    required
+                    error={errors.vehicleId?.message}
                     emptyMessage="Nenhum veículo cadastrado"
                     options={vehicleOptions}
                     value={field.value ? [field.value] : []}

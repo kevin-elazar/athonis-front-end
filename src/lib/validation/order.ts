@@ -21,8 +21,10 @@ export const orderFormSchema = z.object({
   date: z.string().min(1, "Informe a data"),
   // Vazio = dia todo. A maioria das entregas não tem hora marcada.
   deliveryWindow: z.string().optional(),
-  driverId: z.string().nullable(),
-  vehicleId: z.string().nullable(),
+  // Sem motorista e veículo o pedido não entra em rota nenhuma (a
+  // roteirização agrupa por esse par), então os dois são obrigatórios.
+  driverId: z.string().nullable().refine((valor) => !!valor, "Selecione o motorista"),
+  vehicleId: z.string().nullable().refine((valor) => !!valor, "Selecione o veículo"),
   street: z.string().min(3, "Informe a rua"),
   number: z.string().min(1, "Informe o número"),
   district: z.string().min(2, "Informe o bairro"),

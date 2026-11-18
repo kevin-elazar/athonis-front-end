@@ -119,6 +119,18 @@ describe("login", () => {
   );
 });
 
+describe("login: mostrar senha", () => {
+  it("o botão de olho alterna entre senha oculta e visível", async () => {
+    render(<LoginForm />);
+    const senha = screen.getByLabelText("Senha");
+    expect(senha).toHaveAttribute("type", "password");
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar senha" }));
+    expect(senha).toHaveAttribute("type", "text");
+    await userEvent.click(screen.getByRole("button", { name: "Ocultar senha" }));
+    expect(senha).toHaveAttribute("type", "password");
+  });
+});
+
 describe("cadastros", () => {
   it("cliente: valida e preenche o endereço pelo CEP", async () => {
     const onSubmit = vi.fn();
@@ -202,8 +214,8 @@ describe("cadastros", () => {
           status: "pending",
           date: "2026-11-20",
           deliveryWindow: "",
-          driverId: null,
-          vehicleId: null,
+          driverId: "1",
+          vehicleId: "1",
           street: "Rua A",
           number: "10",
           district: "Centro",
@@ -264,5 +276,18 @@ describe("empresa", () => {
   it("somente leitura para quem não é admin", () => {
     render(<CompanyForm company={{ ...empresa, hasDepotCoordinates: true, depotLatitude: -26.4, depotLongitude: -49.0 }} onSubmit={vi.fn()} canEdit={false} />);
     expect(screen.queryByRole("button", { name: /salvar/i })).toBeNull();
+  });
+});
+
+describe("pedido sem atribuição", () => {
+  it("motorista e veículo são obrigatórios", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <OrderForm customers={[cliente]} drivers={[]} vehicles={[]} onSubmit={onSubmit} onCancel={vi.fn()} submitLabel="Salvar" />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(await screen.findByText("Selecione o motorista")).toBeInTheDocument();
+    expect(screen.getByText("Selecione o veículo")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

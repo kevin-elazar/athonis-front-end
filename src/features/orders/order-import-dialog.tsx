@@ -85,10 +85,14 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
                   <code className="text-caption">quantity</code> e os campos de
                   endereço de entrega.
                 </Text>
+                <Text size="body-sm" color="muted">
+                  A planilha modelo traz 10 pedidos de demonstração em Jaraguá do Sul, já com
+                  motoristas e veículos da sua empresa: é só importar e gerar as rotas.
+                </Text>
 
                 <a
-                  href="/modelo-importacao-pedidos.csv"
-                  download
+                  href="/api/order-imports/template"
+                  download="modelo-importacao-pedidos.csv"
                   className="inline-flex w-fit items-center gap-1.5 text-body-sm font-medium text-primary hover:underline"
                 >
                   <Icon icon={Download} size="sm" />
