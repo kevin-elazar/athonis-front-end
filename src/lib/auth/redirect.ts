@@ -1,5 +1,6 @@
 const FALLBACK = "/dashboard";
-const BASE = "http://athonis.invalid";
+// Origem fictícia só para o parser de URL; nunca é acessada.
+const BASE = "https://athonis.invalid";
 
 function hasControlChar(value: string): boolean {
   for (let index = 0; index < value.length; index++) {
