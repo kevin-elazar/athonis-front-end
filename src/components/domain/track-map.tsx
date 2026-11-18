@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Map as LeafletMap, LayerGroup } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn } from "@/lib/utils/cn";
+import { escapeHtml } from "@/lib/utils/html";
 
 /**
  * Mapa de acompanhamento, sobre o mapa de ruas do OpenStreetMap.
@@ -68,9 +69,6 @@ function token(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
-
-const escapeHtml = (text: string) =>
-  text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
 export function TrackMap({
   stops = [],
@@ -183,7 +181,7 @@ export function TrackMap({
         L.marker([stop.lat, stop.lng], {
           icon: L.divIcon({
             className: "",
-            html: `<div style="width:28px;height:28px;border-radius:50%;background:${fill};border:2px solid ${color.surface};display:flex;align-items:center;justify-content:center;color:${color.surface};font:700 13px system-ui">${mark}</div>`,
+            html: `<div style="width:28px;height:28px;border-radius:50%;background:${fill};border:2px solid ${color.surface};display:flex;align-items:center;justify-content:center;color:${color.surface};font:700 13px system-ui">${escapeHtml(mark)}</div>`,
             iconSize: [28, 28],
             iconAnchor: [14, 14],
           }),
@@ -213,7 +211,8 @@ export function TrackMap({
             iconAnchor: [size / 2, size / 2],
           }),
         })
-          .bindTooltip(vehicle.label, { permanent: true, direction: "top", offset: [0, -10] })
+          // O Leaflet põe o conteúdo do tooltip como HTML: o nome vem do cadastro.
+          .bindTooltip(escapeHtml(vehicle.label), { permanent: true, direction: "top", offset: [0, -10] })
           .bindPopup(balloon(vehicle.label, vehicle.detail));
         marker.on("click", () => clickHandler.current?.(vehicle.id));
         marker.addTo(group);
