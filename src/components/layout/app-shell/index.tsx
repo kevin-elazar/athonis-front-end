@@ -15,11 +15,14 @@ import type { MenuAction } from "@/components/ui/dropdown-menu";
 import { NAV_ITEMS } from "@/constants/navigation";
 import { logout } from "@/lib/auth/authentication";
 import { useOrders } from "@/features/orders/hooks";
+import { CurrentUserProvider } from "@/features/auth/current-user";
 
 export type AppShellProps = {
   children: ReactNode;
   userName: string;
   userEmail?: string;
+  /** Papel do usuário na sessão ("admin", ...), para a tela esconder o que ele não pode usar. */
+  userRole?: string;
   /** Nome fantasia da empresa; cai no padrão quando ainda não há cadastro. */
   companyName?: string;
   userMenuItems?: MenuAction[];
@@ -30,6 +33,7 @@ export function AppShell({
   children,
   userName,
   userEmail,
+  userRole,
   companyName = "ATHONIS",
   userMenuItems,
   onUserMenuSelect,
@@ -159,7 +163,9 @@ export function AppShell({
         {/* Sem padding aqui de propósito — é nele que o CommandMenu é portado
             (`inset-0` precisa colar nas bordas, sem a folga do p-6 do main). */}
         <div ref={contentRef} className="relative flex-1 overflow-hidden">
-          <main className="h-full overflow-y-auto p-6">{children}</main>
+          <main className="h-full overflow-y-auto p-6">
+            <CurrentUserProvider role={userRole}>{children}</CurrentUserProvider>
+          </main>
 
           <CommandMenu
             open={commandOpen}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DialogBody,
   DialogContent,
@@ -59,6 +60,7 @@ function AccessForm({ driver, onClose }: { driver: Driver; onClose: () => void }
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
 
   // Enquanto o usuário não digita, o campo mostra o e-mail já cadastrado.
   const emailValue = email ?? access?.email ?? "";
@@ -86,6 +88,7 @@ function AccessForm({ driver, onClose }: { driver: Driver; onClose: () => void }
   const revoke = useMutation({
     mutationFn: () => driverAccessApi.revoke(driver.id),
     onSuccess: () => {
+      setConfirmRevoke(false);
       void refresh();
       toaster.success({
         title: "Acesso desligado",
@@ -99,6 +102,9 @@ function AccessForm({ driver, onClose }: { driver: Driver; onClose: () => void }
 
   const busy = grant.isPending || revoke.isPending;
   const ativo = !!access?.hasAccess && access.isActive;
+  // Sem saber se o motorista já tem login, salvar poderia criar um acesso por
+  // cima do existente sem o aviso de troca de senha.
+  const cannotSave = isLoading || isError;
 
   return (
     <DialogForm
@@ -106,7 +112,7 @@ function AccessForm({ driver, onClose }: { driver: Driver; onClose: () => void }
       onSubmit={(event) => {
         event.preventDefault();
         setSubmitted(true);
-        if (!emailError && !passwordError) grant.mutate();
+        if (!cannotSave && !emailError && !passwordError) grant.mutate();
       }}
     >
       <DialogHeader>
@@ -174,8 +180,7 @@ function AccessForm({ driver, onClose }: { driver: Driver; onClose: () => void }
           <Button
             type="button"
             variant="destructive"
-            onClick={() => revoke.mutate()}
-            loading={revoke.isPending}
+            onClick={() => setConfirmRevoke(true)}
             disabled={busy}
           >
             Desligar acesso
@@ -185,11 +190,22 @@ function AccessForm({ driver, onClose }: { driver: Driver; onClose: () => void }
           <Button type="button" variant="tertiary" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" loading={grant.isPending} disabled={busy}>
+          <Button type="submit" variant="primary" loading={grant.isPending} disabled={busy || cannotSave}>
             {access?.hasAccess ? "Salvar acesso" : "Criar acesso"}
           </Button>
         </Inline>
       </DialogFooter>
+
+      <ConfirmDialog
+        open={confirmRevoke}
+        onOpenChange={(open) => !revoke.isPending && setConfirmRevoke(open)}
+        title={`Desligar o acesso de ${driver.name}?`}
+        description="O motorista é desconectado do aplicativo e não consegue mais entrar até um novo acesso ser criado. O histórico de entregas é mantido."
+        tone="danger"
+        confirmLabel="Desligar acesso"
+        loading={revoke.isPending}
+        onConfirm={() => revoke.mutate()}
+      />
     </DialogForm>
   );
 }

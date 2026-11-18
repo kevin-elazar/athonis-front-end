@@ -41,6 +41,7 @@ import {
 import { useVehicles } from "@/features/vehicles/hooks";
 import { DriverForm } from "@/features/drivers/driver-form";
 import { DriverAccessDialog } from "@/features/drivers/driver-access-dialog";
+import { useCurrentUser } from "@/features/auth/current-user";
 import { toaster } from "@/components/ui/toast";
 import type { DriverFormInput } from "@/lib/validation/driver";
 import type { Driver } from "@/types/domain";
@@ -49,6 +50,8 @@ export default function DriversPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Só o admin administra o login do motorista no aplicativo (o backend também barra).
+  const { isAdmin } = useCurrentUser();
 
   const [search, setSearch] = useState("");
   const { data: driverList, isLoading, isError, refetch } = useDrivers(search);
@@ -216,7 +219,7 @@ export default function DriversPage() {
         rowActions={() => [
           { value: "view", label: "Ver detalhes" },
           { value: "edit", label: "Editar" },
-          { value: "access", label: "Acesso ao aplicativo", icon: Smartphone },
+          ...(isAdmin ? [{ value: "access", label: "Acesso ao aplicativo", icon: Smartphone }] : []),
           { value: "delete", label: "Excluir", danger: true, icon: Trash2 },
         ]}
         onRowActionSelect={(driver, action) => {
@@ -225,7 +228,7 @@ export default function DriversPage() {
             setEditing(driver);
             setFormOpen(true);
           }
-          if (action === "access") setAccessOf(driver);
+          if (action === "access" && isAdmin) setAccessOf(driver);
           if (action === "delete") setDeleting(driver);
         }}
       />
@@ -327,7 +330,7 @@ export default function DriversPage() {
         </DrawerContent>
       </DrawerRoot>
 
-      <DriverAccessDialog driver={accessOf} onClose={() => setAccessOf(null)} />
+      {isAdmin && <DriverAccessDialog driver={accessOf} onClose={() => setAccessOf(null)} />}
 
       <ConfirmDialog
         open={!!deleting}

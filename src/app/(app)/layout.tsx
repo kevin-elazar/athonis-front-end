@@ -11,7 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const companyName = company.ok ? company.data.tradeName || company.data.corporateName : undefined;
 
   return (
-    <AppShell userName={user.name} userEmail={user.email} companyName={companyName}>
+    <AppShell userName={user.name} userEmail={user.email} userRole={user.role} companyName={companyName}>
       {children}
     </AppShell>
   );
