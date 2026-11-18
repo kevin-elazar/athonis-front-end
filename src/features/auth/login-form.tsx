@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, Mail } from "lucide-react";
 import { loginSchema, type LoginInput } from "@/lib/validation/auth";
 import { login } from "@/lib/auth/authentication";
+import { safeRedirectPath } from "@/lib/auth/redirect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,7 +39,7 @@ export function LoginForm() {
       return;
     }
 
-    const redirectTo = searchParams.get("redirect") ?? "/dashboard";
+    const redirectTo = safeRedirectPath(searchParams.get("redirect"));
     router.push(redirectTo);
     router.refresh();
   }

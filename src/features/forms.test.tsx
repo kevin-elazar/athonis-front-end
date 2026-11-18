@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Company, Customer, Driver, Vehicle } from "@/types/domain";
 
 const navegacao = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
+const busca = vi.hoisted(() => ({ query: "redirect=/routes" }));
 vi.mock("next/navigation", () => ({
   useRouter: () => navegacao,
-  useSearchParams: () => new URLSearchParams("redirect=/routes"),
+  useSearchParams: () => new URLSearchParams(busca.query),
   usePathname: () => "/",
 }));
 
@@ -99,6 +100,23 @@ describe("login", () => {
     await userEvent.click(screen.getByRole("button", { name: /entrar/i }));
     await waitFor(() => expect(navegacao.push).toHaveBeenCalledWith("/routes"));
   });
+
+  it.each(["//evil.example", "/\\evil.example", "https://evil.example"])(
+    "não segue redirect para fora do painel (%s)",
+    async (destino) => {
+      busca.query = `redirect=${encodeURIComponent(destino)}`;
+      try {
+        render(<LoginForm />);
+        await userEvent.type(screen.getByLabelText("Email"), "admin@athonis.com");
+        await userEvent.type(screen.getByLabelText("Senha"), "123");
+        login.mockResolvedValueOnce({ success: true });
+        await userEvent.click(screen.getByRole("button", { name: /entrar/i }));
+        await waitFor(() => expect(navegacao.push).toHaveBeenLastCalledWith("/dashboard"));
+      } finally {
+        busca.query = "redirect=/routes";
+      }
+    },
+  );
 });
 
 describe("cadastros", () => {
