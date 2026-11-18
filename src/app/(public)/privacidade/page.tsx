@@ -98,6 +98,11 @@ export default function PrivacidadePage() {
               calcular rotas e geocodificar endereços.
             </li>
             <li>
+              <strong>OpenStreetMap Foundation:</strong> fornece as imagens do mapa nas telas de
+              acompanhamento; recebe o endereço IP de quem usa o painel e a área do mapa que está sendo
+              vista.
+            </li>
+            <li>
               <strong>ViaCEP:</strong> recebe apenas o CEP digitado, para preencher o endereço.
             </li>
             <li>
