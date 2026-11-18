@@ -148,6 +148,15 @@ describe("mutações invalidam o cache", () => {
     expect(invalidar).toHaveBeenCalled();
   });
 
+  it.each([
+    ["iniciar", () => routes.useStartRoute(), "5"],
+    ["duplicar", () => routes.useDuplicateRoute(), { id: "5", input: {} }],
+  ] as const)("rota: %s atualiza também as telas de execução em campo", async (_nome, hook, valor) => {
+    const invalidar = await mutar(hook as never, valor);
+    const chaves = invalidar.mock.calls.map(([filtro]) => (filtro as { queryKey: unknown[] }).queryKey[0]);
+    expect(chaves).toEqual(expect.arrayContaining(["live-routes", "field-analytics", "route-comparison"]));
+  });
+
   it("validar pedidos não mexe no cache", async () => {
     const { Wrapper } = createQueryWrapper();
     const { result } = renderHook(() => routes.useValidateOrdersForRoute(), { wrapper: Wrapper });
