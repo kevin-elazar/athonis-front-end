@@ -30,14 +30,17 @@ import type { LiveRoute, RouteComparison } from "@/types/domain";
 /** Posição mais velha que isto é mostrada como "sem sinal": o entregador pode estar em outro lugar. */
 const STALE_AFTER_MIN = 5;
 
-function minutesAgo(iso: string | null | undefined): number | null {
+function minutesAgo(iso: string | null | undefined, now: number): number | null {
   if (!iso) return null;
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = now - new Date(iso).getTime();
   return Number.isFinite(diff) ? Math.max(0, Math.round(diff / 60000)) : null;
 }
 
-function positionAge(route: LiveRoute): { label: string; tone: "success" | "warning" | "muted" } {
-  const age = minutesAgo(route.position?.recordedAt);
+function positionAge(
+  route: LiveRoute,
+  now: number = Date.now(),
+): { label: string; tone: "success" | "warning" | "muted" } {
+  const age = minutesAgo(route.position?.recordedAt, now);
   if (age == null) return { label: "Sem posição", tone: "muted" };
   if (age <= 1) return { label: "Agora", tone: "success" };
   if (age <= STALE_AFTER_MIN) return { label: `Há ${age} min`, tone: "success" };
@@ -65,7 +68,7 @@ export default function TrackingPage() {
 // ------------------------------------------------------------------ ao vivo
 
 function LivePanel() {
-  const { data: routes, isLoading, isError, refetch, dataUpdatedAt } = useLiveRoutes();
+  const { data: routes, isLoading, isError, refetch, dataUpdatedAt, errorUpdatedAt } = useLiveRoutes();
   const [selected, setSelected] = useState<string | null>(null);
 
   // Sem escolha do usuário, mostra a primeira rota em andamento.
@@ -73,7 +76,12 @@ function LivePanel() {
     selected && routes?.some((route) => route.routeId === selected)
       ? selected
       : (routes?.[0]?.routeId ?? null);
-  const { data: detail } = useRouteComparison(selectedId, LIVE_REFRESH_MS);
+  const { data: detail, isError: detailFailed } = useRouteComparison(selectedId, LIVE_REFRESH_MS);
+
+  // Momento da última tentativa de atualização (com ou sem sucesso): a idade
+  // da posição no balão avança junto com a lista a cada ciclo de polling, em
+  // vez de ficar congelada enquanto `routes` e a seleção não mudam.
+  const refreshedAt = Math.max(dataUpdatedAt, errorUpdatedAt);
 
   const vehicles: TrackMapVehicle[] = useMemo(
     () =>
@@ -84,10 +92,10 @@ function LivePanel() {
           lat: route.position!.lat,
           lng: route.position!.lng,
           label: route.driverName?.split(" ")[0] ?? `Rota #${route.routeId}`,
-          detail: `Rota #${route.routeId} · ${positionAge(route).label}`,
+          detail: `Rota #${route.routeId} · ${positionAge(route, refreshedAt || undefined).label}`,
           selected: route.routeId === selectedId,
         })),
-    [routes, selectedId],
+    [routes, selectedId, refreshedAt],
   );
 
   if (isLoading) {
@@ -98,7 +106,9 @@ function LivePanel() {
     );
   }
 
-  if (isError || !routes) {
+  // Com dados anteriores, uma falha de atualização não tira o mapa da tela:
+  // só avisa que as posições podem estar desatualizadas.
+  if (!routes) {
     return (
       <Box surface="surface" border="default" radius="lg">
         <ErrorState
@@ -138,6 +148,22 @@ function LivePanel() {
         {formatClock(new Date(dataUpdatedAt).toISOString())}. A posição chega com até um minuto de
         atraso, porque o aplicativo envia o trajeto em lotes.
       </Text>
+
+      {isError && (
+        <Inline gap={2} align="center" role="status">
+          <StatusBadge tone="warning">Atualização falhou</StatusBadge>
+          <Text size="body-sm" color="muted">
+            Não foi possível buscar as posições agora; o mapa mostra as da última atualização.{" "}
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="text-primary font-medium hover:underline"
+            >
+              Tentar novamente
+            </button>
+          </Text>
+        </Inline>
+      )}
 
       <Grid columns={3} gap={4} className="grid-cols-1 lg:grid-cols-3">
         <Stack gap={2}>
@@ -181,6 +207,13 @@ function LivePanel() {
         </Stack>
 
         <div className="lg:col-span-2">
+          {detailFailed && (
+            <Text size="caption" color="muted" className="mb-2" role="status">
+              {detail
+                ? "Não foi possível atualizar o percurso desta rota; mostrando o último carregado."
+                : "Não foi possível carregar o percurso desta rota; o mapa mostra só a posição dos entregadores."}
+            </Text>
+          )}
           {detail ? (
             <Stack gap={3}>
               <RouteTrack data={detail} vehicle={selectedVehicle} className="h-[480px]" />
