@@ -102,8 +102,8 @@ describe("pedido", () => {
     status: "pending",
     value: "",
     date: "2026-11-20",
-    driverId: null,
-    vehicleId: null,
+    driverId: "1",
+    vehicleId: "2",
     street: "Rua A",
     number: "1",
     district: "Centro",
@@ -117,6 +117,12 @@ describe("pedido", () => {
     expect(r.success).toBe(true);
     expect(r.data?.quantity).toBe(2);
     expect(r.data?.value).toBeUndefined();
+  });
+
+  it("exige motorista e veículo", () => {
+    const erros = mensagens(orderFormSchema.safeParse({ ...pedido, driverId: null, vehicleId: null }));
+    expect(erros.driverId).toBe("Selecione o motorista");
+    expect(erros.vehicleId).toBe("Selecione o veículo");
   });
 
   it("rejeita valor negativo", () => {
