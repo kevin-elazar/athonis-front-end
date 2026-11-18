@@ -8,7 +8,7 @@
  */
 
 import { createAuthenticatedApiClient } from "./client";
-import { toApiErrorMessage } from "./errors";
+import { toActionFailure, type ActionResult } from "./errors";
 import { getSessionToken } from "@/lib/auth/session";
 import {
   mapCompany,
@@ -60,17 +60,22 @@ const PAGE_SIZE = 200;
 
 type Paginated<T> = { items?: T[]; meta?: { total: number } };
 
-async function request<T>(fn: (api: Awaited<ReturnType<typeof createAuthenticatedApiClient>>) => Promise<T>): Promise<T> {
+/**
+ * Erro esperado (validação, 404, API fora do ar) volta como valor, não como
+ * exceção: em produção o React troca a mensagem de um erro lançado por um
+ * digest genérico, e o usuário perderia o texto do backend. O wrapper em
+ * `resources.ts` desembrulha o resultado e lança `ApiError` no cliente.
+ */
+async function request<T>(
+  fn: (api: Awaited<ReturnType<typeof createAuthenticatedApiClient>>) => Promise<T>,
+): Promise<ActionResult<T>> {
   const api = await createAuthenticatedApiClient();
   try {
-    return await fn(api);
+    return { ok: true, data: await fn(api) };
   } catch (error) {
-    // A mensagem real do backend (inclusive erros por campo) é preservada;
-    // Error é o que atravessa a fronteira de Server Action sem perder texto.
-    throw new Error(toApiErrorMessage(error));
+    return toActionFailure(error);
   }
 }
-
 
 // ----------------------------------------------------------------- Empresa
 
@@ -80,14 +85,14 @@ async function request<T>(fn: (api: Awaited<ReturnType<typeof createAuthenticate
  * Não existe ação de criar empresa: um tenant novo é criado no banco
  * (scripts/create-company.js), por quem administra o sistema.
  */
-export async function getCompany(): Promise<Company> {
+export async function getCompany(): Promise<ActionResult<Company>> {
   return request(async (api) => {
     const { data } = await api.get<ApiCompany>("/company");
     return mapCompany(data);
   });
 }
 
-export async function updateCompany(input: CompanyFormInput): Promise<Company> {
+export async function updateCompany(input: CompanyFormInput): Promise<ActionResult<Company>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiCompany>("/company", toApiCompany(input));
     return mapCompany(data);
@@ -96,7 +101,7 @@ export async function updateCompany(input: CompanyFormInput): Promise<Company> {
 
 // ------------------------------------------------------------- Clientes
 
-export async function listCustomers(): Promise<Customer[]> {
+export async function listCustomers(): Promise<ActionResult<Customer[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiClient>>("/clients", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "name", order: "ASC" },
@@ -105,27 +110,29 @@ export async function listCustomers(): Promise<Customer[]> {
   });
 }
 
-export async function createCustomer(input: CustomerFormInput): Promise<Customer> {
+export async function createCustomer(input: CustomerFormInput): Promise<ActionResult<Customer>> {
   return request(async (api) => {
     const { data } = await api.post<ApiClient>("/clients", toApiClient(input));
     return mapCustomer(data);
   });
 }
 
-export async function updateCustomer(id: string, input: CustomerFormInput): Promise<Customer> {
+export async function updateCustomer(id: string, input: CustomerFormInput): Promise<ActionResult<Customer>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiClient>(`/clients/${id}`, toApiClient(input));
     return mapCustomer(data);
   });
 }
 
-export async function deleteCustomer(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/clients/${id}`));
+export async function deleteCustomer(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/clients/${id}`);
+  });
 }
 
 // ------------------------------------------------------------ Motoristas
 
-export async function listDrivers(): Promise<Driver[]> {
+export async function listDrivers(): Promise<ActionResult<Driver[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiDriver>>("/drivers", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "name", order: "ASC" },
@@ -134,27 +141,29 @@ export async function listDrivers(): Promise<Driver[]> {
   });
 }
 
-export async function createDriver(input: DriverFormInput): Promise<Driver> {
+export async function createDriver(input: DriverFormInput): Promise<ActionResult<Driver>> {
   return request(async (api) => {
     const { data } = await api.post<ApiDriver>("/drivers", toApiDriver(input));
     return mapDriver(data);
   });
 }
 
-export async function updateDriver(id: string, input: DriverFormInput): Promise<Driver> {
+export async function updateDriver(id: string, input: DriverFormInput): Promise<ActionResult<Driver>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiDriver>(`/drivers/${id}`, toApiDriver(input));
     return mapDriver(data);
   });
 }
 
-export async function deleteDriver(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/drivers/${id}`));
+export async function deleteDriver(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/drivers/${id}`);
+  });
 }
 
 // -------------------------------------------------------------- Veículos
 
-export async function listVehicles(): Promise<Vehicle[]> {
+export async function listVehicles(): Promise<ActionResult<Vehicle[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiVehicle>>("/vehicles", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "name", order: "ASC" },
@@ -163,27 +172,29 @@ export async function listVehicles(): Promise<Vehicle[]> {
   });
 }
 
-export async function createVehicle(input: VehicleFormInput): Promise<Vehicle> {
+export async function createVehicle(input: VehicleFormInput): Promise<ActionResult<Vehicle>> {
   return request(async (api) => {
     const { data } = await api.post<ApiVehicle>("/vehicles", toApiVehicle(input));
     return mapVehicle(data);
   });
 }
 
-export async function updateVehicle(id: string, input: VehicleFormInput): Promise<Vehicle> {
+export async function updateVehicle(id: string, input: VehicleFormInput): Promise<ActionResult<Vehicle>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiVehicle>(`/vehicles/${id}`, toApiVehicle(input));
     return mapVehicle(data);
   });
 }
 
-export async function deleteVehicle(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/vehicles/${id}`));
+export async function deleteVehicle(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/vehicles/${id}`);
+  });
 }
 
 // --------------------------------------------------------------- Pedidos
 
-export async function listOrders(): Promise<Order[]> {
+export async function listOrders(): Promise<ActionResult<Order[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiOrder>>("/orders", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "order_id", order: "DESC" },
@@ -192,22 +203,24 @@ export async function listOrders(): Promise<Order[]> {
   });
 }
 
-export async function createOrder(input: OrderFormInput): Promise<Order> {
+export async function createOrder(input: OrderFormInput): Promise<ActionResult<Order>> {
   return request(async (api) => {
     const { data } = await api.post<ApiOrder>("/orders", toApiOrder(input));
     return mapOrder(data);
   });
 }
 
-export async function updateOrder(id: string, input: OrderFormInput): Promise<Order> {
+export async function updateOrder(id: string, input: OrderFormInput): Promise<ActionResult<Order>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiOrder>(`/orders/${id}`, toApiOrder(input));
     return mapOrder(data);
   });
 }
 
-export async function deleteOrder(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/orders/${id}`));
+export async function deleteOrder(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/orders/${id}`);
+  });
 }
 
 /**
@@ -219,10 +232,10 @@ export async function deleteOrder(id: string): Promise<void> {
  * (o backend recebia a requisição sem o arquivo), enquanto `fetch` com
  * `FormData` funciona normalmente.
  */
-export async function importOrders(formData: FormData): Promise<OrderImportResult> {
+export async function importOrders(formData: FormData): Promise<ActionResult<OrderImportResult>> {
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    throw new Error("Nenhum arquivo foi enviado");
+    return { ok: false, message: "Nenhum arquivo foi enviado" };
   }
 
   const token = await getSessionToken();
@@ -231,36 +244,44 @@ export async function importOrders(formData: FormData): Promise<OrderImportResul
   const uploadForm = new FormData();
   uploadForm.append("file", file, file.name);
 
-  const response = await fetch(`${apiUrl}/order-imports/upload`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: uploadForm,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/order-imports/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: uploadForm,
+    });
+  } catch (error) {
+    // Sem `response`, a mensagem cai em "Não foi possível conectar ao servidor".
+    return toActionFailure(error);
+  }
 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(toApiErrorMessage({ response: { status: response.status, data } }));
+    return toActionFailure({ response: { status: response.status, data } });
   }
 
-  return data as OrderImportResult;
+  return { ok: true, data: data as OrderImportResult };
 }
 
 // ----------------------------------------------------------------- Rotas
 
-export async function listRoutes(): Promise<Route[]> {
+export async function listRoutes(): Promise<ActionResult<Route[]>> {
   return request(async (api) => {
     const { data } = await api.get<ApiRoute[]>("/routes");
     return (Array.isArray(data) ? data : []).map(mapRoute);
   });
 }
 
-export async function deleteRoute(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/routes/${id}`));
+export async function deleteRoute(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/routes/${id}`);
+  });
 }
 
 /** Rota sai para a rua: pedidos, motorista e veículo entram em trânsito. */
-export async function startRoute(id: string): Promise<Route> {
+export async function startRoute(id: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/start`);
     return mapRoute(data);
@@ -268,7 +289,7 @@ export async function startRoute(id: string): Promise<Route> {
 }
 
 /** Encerra a rota, dando como entregues as paradas ainda em aberto. */
-export async function completeRoute(id: string): Promise<Route> {
+export async function completeRoute(id: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/complete`);
     return mapRoute(data);
@@ -283,7 +304,7 @@ export async function completeRoute(id: string): Promise<Route> {
 export async function duplicateRoute(
   id: string,
   input: { plannedDate?: string; driverId?: string; vehicleId?: string },
-): Promise<Route> {
+): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/duplicate`, {
       ...(input.plannedDate ? { planned_date: input.plannedDate } : {}),
@@ -295,7 +316,7 @@ export async function duplicateRoute(
 }
 
 /** Devolve os pedidos para a fila, mantendo o registro da rota. */
-export async function cancelRoute(id: string): Promise<Route> {
+export async function cancelRoute(id: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/cancel`);
     return mapRoute(data);
@@ -306,7 +327,7 @@ export async function cancelRoute(id: string): Promise<Route> {
  * Baixa de uma parada. É o que o aplicativo do entregador vai chamar a cada
  * entrega; quando é a última, a rota se encerra sozinha.
  */
-export async function deliverRouteStop(routeId: string, orderId: string): Promise<Route> {
+export async function deliverRouteStop(routeId: string, orderId: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${routeId}/orders/${orderId}/deliver`);
     return mapRoute(data);
@@ -314,10 +335,12 @@ export async function deliverRouteStop(routeId: string, orderId: string): Promis
 }
 
 /** Verifica quais pedidos podem ser roteirizados, com o motivo de cada exclusão. */
-export async function validateOrdersForRoute(orderIds: string[]): Promise<{
-  validOrders: number[];
-  unassigned: Array<{ orderId: number; reason: string }>;
-}> {
+export async function validateOrdersForRoute(orderIds: string[]): Promise<
+  ActionResult<{
+    validOrders: number[];
+    unassigned: Array<{ orderId: number; reason: string }>;
+  }>
+> {
   return request(async (api) => {
     const { data } = await api.post("/optimization-routes/validate-orders", {
       orderIds: orderIds.map(Number),
@@ -330,12 +353,14 @@ export async function validateOrdersForRoute(orderIds: string[]): Promise<{
 }
 
 /** Gera as rotas otimizadas para os pedidos selecionados. */
-export async function optimizeRoutes(orderIds: string[]): Promise<{
-  totalRoutes: number;
-  simulated: boolean;
-  message: string;
-  unassignedOrders: Array<{ orderId: number; reason: string }>;
-}> {
+export async function optimizeRoutes(orderIds: string[]): Promise<
+  ActionResult<{
+    totalRoutes: number;
+    simulated: boolean;
+    message: string;
+    unassignedOrders: Array<{ orderId: number; reason: string }>;
+  }>
+> {
   return request(async (api) => {
     const { data } = await api.post("/optimization-routes/optimize", {
       orderIds: orderIds.map(Number),
@@ -369,7 +394,7 @@ function mapDriverAccess(data: ApiDriverAccess): DriverAccess {
   };
 }
 
-export async function getDriverAccess(driverId: string): Promise<DriverAccess> {
+export async function getDriverAccess(driverId: string): Promise<ActionResult<DriverAccess>> {
   return request(async (api) => {
     const { data } = await api.get<ApiDriverAccess>(`/drivers/${driverId}/access`);
     return mapDriverAccess(data);
@@ -380,15 +405,17 @@ export async function getDriverAccess(driverId: string): Promise<DriverAccess> {
 export async function grantDriverAccess(
   driverId: string,
   input: { email: string; password: string },
-): Promise<DriverAccess> {
+): Promise<ActionResult<DriverAccess>> {
   return request(async (api) => {
     const { data } = await api.put<ApiDriverAccess>(`/drivers/${driverId}/access`, input);
     return mapDriverAccess(data);
   });
 }
 
-export async function revokeDriverAccess(driverId: string): Promise<void> {
-  await request(async (api) => api.delete(`/drivers/${driverId}/access`));
+export async function revokeDriverAccess(driverId: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/drivers/${driverId}/access`);
+  });
 }
 
 // ---------------------------------------------------- Execução em campo
@@ -399,7 +426,7 @@ export type AnalyticsRange = { from?: string; to?: string };
 /* eslint-disable @typescript-eslint/no-explicit-any -- respostas de leitura,
    convertidas campo a campo logo abaixo */
 
-export async function getFieldOverview(range: AnalyticsRange): Promise<FieldOverview> {
+export async function getFieldOverview(range: AnalyticsRange): Promise<ActionResult<FieldOverview>> {
   return request(async (api) => {
     const { data } = await api.get<any>("/analytics/overview", { params: range });
     return {
@@ -426,7 +453,7 @@ export async function getFieldOverview(range: AnalyticsRange): Promise<FieldOver
   });
 }
 
-export async function getFieldDrivers(range: AnalyticsRange): Promise<FieldDriverStats[]> {
+export async function getFieldDrivers(range: AnalyticsRange): Promise<ActionResult<FieldDriverStats[]>> {
   return request(async (api) => {
     const { data } = await api.get<any[]>("/analytics/drivers", { params: range });
     return (data ?? []).map((item) => ({
@@ -445,7 +472,7 @@ export async function getFieldDrivers(range: AnalyticsRange): Promise<FieldDrive
   });
 }
 
-export async function getFieldRegions(range: AnalyticsRange): Promise<FieldRegionStats[]> {
+export async function getFieldRegions(range: AnalyticsRange): Promise<ActionResult<FieldRegionStats[]>> {
   return request(async (api) => {
     const { data } = await api.get<any[]>("/analytics/regions", { params: range });
     return (data ?? []).map((item) => ({
@@ -459,7 +486,7 @@ export async function getFieldRegions(range: AnalyticsRange): Promise<FieldRegio
   });
 }
 
-export async function getFieldOccurrences(range: AnalyticsRange): Promise<FieldOccurrences> {
+export async function getFieldOccurrences(range: AnalyticsRange): Promise<ActionResult<FieldOccurrences>> {
   return request(async (api) => {
     const { data } = await api.get<any>("/analytics/occurrences", { params: range });
     return {
@@ -479,7 +506,7 @@ export async function getFieldOccurrences(range: AnalyticsRange): Promise<FieldO
   });
 }
 
-export async function getFieldRoutes(range: AnalyticsRange): Promise<FieldRouteSummary[]> {
+export async function getFieldRoutes(range: AnalyticsRange): Promise<ActionResult<FieldRouteSummary[]>> {
   return request(async (api) => {
     const { data } = await api.get<any[]>("/analytics/routes", { params: range });
     return (data ?? []).map((item) => ({
@@ -502,7 +529,7 @@ export async function getFieldRoutes(range: AnalyticsRange): Promise<FieldRouteS
   });
 }
 
-export async function getRouteComparison(routeId: string): Promise<RouteComparison> {
+export async function getRouteComparison(routeId: string): Promise<ActionResult<RouteComparison>> {
   return request(async (api) => {
     const { data } = await api.get<any>(`/analytics/routes/${routeId}/comparison`);
     const summary = data.summary;
@@ -572,7 +599,7 @@ export async function getRouteComparison(routeId: string): Promise<RouteComparis
 }
 
 /** Rotas em andamento agora, com a última posição conhecida de cada entregador. */
-export async function getLiveRoutes(): Promise<LiveRoute[]> {
+export async function getLiveRoutes(): Promise<ActionResult<LiveRoute[]>> {
   return request(async (api) => {
     const { data } = await api.get<any[]>("/analytics/live");
     return (data ?? []).map((item) => ({

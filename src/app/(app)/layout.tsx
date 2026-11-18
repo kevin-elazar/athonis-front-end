@@ -7,13 +7,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // O nome vem do cadastro da empresa. Se ainda não existir, o shell usa o
   // padrão — a tela de Configurações explica como cadastrar.
-  let companyName: string | undefined;
-  try {
-    const company = await getCompany();
-    companyName = company.tradeName || company.corporateName;
-  } catch {
-    companyName = undefined;
-  }
+  const company = await getCompany();
+  const companyName = company.ok ? company.data.tradeName || company.data.corporateName : undefined;
 
   return (
     <AppShell userName={user.name} userEmail={user.email} companyName={companyName}>
