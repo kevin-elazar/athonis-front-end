@@ -384,7 +384,10 @@ export function CompanyForm({ company, onSubmit, loading = false, canEdit = true
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate>
       <Stack gap={5}>
+        {/* Formulário em abas: os campos ficam montados para manter valores e erros. */}
         <Tabs
+          lazyMount={false}
+          unmountOnExit={false}
           items={[
             { value: "identificacao", label: "Identificação", content: identification },
             { value: "deposito", label: "Depósito", content: depot },

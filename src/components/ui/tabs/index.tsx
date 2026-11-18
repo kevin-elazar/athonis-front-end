@@ -17,12 +17,33 @@ export type TabsProps = {
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   className?: string;
+  /**
+   * Monta o painel só quando a aba é aberta pela primeira vez (padrão: sim).
+   * Sem isso, toda aba escondida já busca dados e faz polling.
+   */
+  lazyMount?: boolean;
+  /**
+   * Desmonta o painel ao sair da aba (padrão: sim), encerrando consultas e
+   * atualizações periódicas dele. Formulários divididos em abas devem passar
+   * `false` para manter os campos (e os erros de validação) montados.
+   */
+  unmountOnExit?: boolean;
 };
 
-export function Tabs({ items, value, defaultValue, onValueChange, className }: TabsProps) {
+export function Tabs({
+  items,
+  value,
+  defaultValue,
+  onValueChange,
+  className,
+  lazyMount = true,
+  unmountOnExit = true,
+}: TabsProps) {
   return (
     <ArkTabs.Root
       value={value}
+      lazyMount={lazyMount}
+      unmountOnExit={unmountOnExit}
       defaultValue={defaultValue ?? items[0]?.value}
       onValueChange={(details) => onValueChange?.(details.value ?? "")}
       className={cn("flex flex-col gap-4", className)}
