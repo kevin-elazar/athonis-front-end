@@ -14,9 +14,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Só PR cancela a execução anterior: num push, cancelar no meio poderia
+# interromper a publicação da imagem ou o deploy.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -79,6 +81,24 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      # Produção nunca cai no endereço de staging: sem a variável do
+      # ambiente escolhido, a imagem não é gerada.
+      - id: ambiente
+        env:
+          PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/master" ] || [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            api_url="$PRODUCTION_API_URL"; ambiente=production; var=PRODUCTION_API_URL
+          else
+            api_url="$STAGING_API_URL"; ambiente=staging; var=STAGING_API_URL
+          fi
+          if [ -z "$api_url" ]; then
+            echo "::error::Variável $var não configurada; a imagem de $ambiente não pode ser gerada."
+            exit 1
+          fi
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+          echo "ambiente=$ambiente" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -102,9 +122,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # O endereço da API entra no bundle do Next no build.
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) && vars.PRODUCTION_API_URL || vars.STAGING_API_URL }}
+            NEXT_PUBLIC_API_URL=${{ steps.ambiente.outputs.api_url }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.SENTRY_DSN_WEB }}
-            NEXT_PUBLIC_SENTRY_ENVIRONMENT=${{ (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) && 'production' || 'staging' }}
+            NEXT_PUBLIC_SENTRY_ENVIRONMENT=${{ steps.ambiente.outputs.ambiente }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

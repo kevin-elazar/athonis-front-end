@@ -22,6 +22,9 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Sem o endereço da API o bundle cairia no fallback de desenvolvimento
+# (localhost) e o painel subiria quebrado sem nenhum aviso.
+RUN test -n "$NEXT_PUBLIC_API_URL" || (echo "NEXT_PUBLIC_API_URL não informado (--build-arg NEXT_PUBLIC_API_URL=...)" && exit 1)
 RUN npm run build
 
 FROM node:22-alpine AS runtime
