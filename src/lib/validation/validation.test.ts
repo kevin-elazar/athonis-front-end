@@ -150,3 +150,14 @@ describe("empresa", () => {
     });
   });
 });
+
+describe("mensagens em português", () => {
+  it("campo nunca preenchido diz que é obrigatório, sem texto técnico em inglês", () => {
+    const r = orderFormSchema.safeParse({});
+    const textos = r.success ? [] : r.error.issues.map((i) => i.message);
+    expect(textos.length).toBeGreaterThan(0);
+    expect(textos.join(" ")).not.toMatch(/Invalid input|expected/);
+    expect(mensagens(r).zipCode).toBe("Informe o CEP");
+    expect(mensagens(r).street).toBe("Campo obrigatório");
+  });
+});

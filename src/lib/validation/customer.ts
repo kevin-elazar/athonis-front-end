@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt";
 import { isValidDocument, isValidPhone, onlyDigits } from "@/lib/utils/masks";
 
 /**
@@ -16,7 +17,7 @@ export const customerFormSchema = z
     document: z.string().min(1, "Informe o documento"),
     phone: z.string().min(1, "Informe o telefone"),
     email: z.email("Email inválido"),
-    zipCode: z.string().min(8, "CEP inválido").max(10, "CEP inválido"),
+    zipCode: z.string({ error: "Informe o CEP" }).min(8, "CEP inválido").max(10, "CEP inválido"),
     street: z.string().min(3, "Informe a rua"),
     number: z.string().min(1, "Informe o número"),
     district: z.string().min(2, "Informe o bairro"),

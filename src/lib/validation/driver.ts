@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt";
 import { isValidCnh, isValidCpf, isValidPhone, onlyDigits } from "@/lib/utils/masks";
 
 /**

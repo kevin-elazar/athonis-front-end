@@ -46,4 +46,25 @@ describe("gerar rota", () => {
     await userEvent.click(screen.getByRole("button", { name: /gerar/i }));
     expect(onGenerate).toHaveBeenCalledWith(["2"]);
   });
+
+  it("depois de gerar, os pedidos que entraram na rota saem da seleção", async () => {
+    const onGenerate = vi.fn();
+    const { rerender } = render(
+      <GenerateRouteDialog orders={[pedido("1"), pedido("2")]} onGenerate={onGenerate} onCancel={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Selecionar todos" }));
+    expect(screen.getByText("2 de 2 selecionado(s)")).toBeInTheDocument();
+
+    // A lista volta da API com o pedido 1 já na rota nova.
+    rerender(
+      <GenerateRouteDialog
+        orders={[pedido("1", { routeId: "11", status: "planned" }), pedido("2")]}
+        onGenerate={onGenerate}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("1 de 1 selecionado(s)")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /gerar/i }));
+    expect(onGenerate).toHaveBeenLastCalledWith(["2"]);
+  });
 });

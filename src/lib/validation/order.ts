@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt";
 
 /**
  * Espelha CreateOrderDto no backend. O endereço de entrega é estruturado e
@@ -30,7 +31,7 @@ export const orderFormSchema = z.object({
   district: z.string().min(2, "Informe o bairro"),
   city: z.string().min(2, "Informe a cidade"),
   state: z.string({ error: "Selecione a UF" }).length(2, "Use a sigla da UF (ex: SP)"),
-  zipCode: z.string().min(8, "CEP inválido").max(10, "CEP inválido"),
+  zipCode: z.string({ error: "Informe o CEP" }).min(8, "CEP inválido").max(10, "CEP inválido"),
 });
 
 export type OrderFormInput = z.infer<typeof orderFormSchema>;

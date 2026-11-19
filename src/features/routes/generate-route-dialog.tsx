@@ -49,7 +49,19 @@ export function GenerateRouteDialog({
   onCancel,
 }: GenerateRouteDialogProps) {
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [marked, setMarked] = useState<Set<string>>(new Set());
+
+  // Só vale a marcação de pedido que ainda pode ser roteirizado. Depois de
+  // gerar, os pedidos que entraram na rota ficam bloqueados ("Já está na
+  // Rota #N") e saem da seleção sozinhos, em vez de continuarem contados.
+  const roteirizaveis = useMemo(
+    () => new Set(orders.filter((order) => !blockingReason(order)).map((order) => order.id)),
+    [orders],
+  );
+  const selected = useMemo(
+    () => new Set([...marked].filter((id) => roteirizaveis.has(id))),
+    [marked, roteirizaveis],
+  );
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -72,8 +84,8 @@ export function GenerateRouteDialog({
   );
 
   function toggle(id: string) {
-    setSelected((current) => {
-      const next = new Set(current);
+    setMarked(() => {
+      const next = new Set(selected);
       if (next.has(id)) {
         next.delete(id);
       } else {
@@ -84,9 +96,7 @@ export function GenerateRouteDialog({
   }
 
   function toggleAll() {
-    setSelected((current) =>
-      current.size === selectableIds.length ? new Set() : new Set(selectableIds),
-    );
+    setMarked(selected.size === selectableIds.length ? new Set() : new Set(selectableIds));
   }
 
   return (

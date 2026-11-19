@@ -51,12 +51,26 @@ import {
   type UnassignedOrder,
 } from "@/features/routes/generate-route-dialog";
 import { DuplicateRouteDialog } from "@/features/routes/duplicate-route-dialog";
-import { RouteMap } from "@/components/domain/route-map";
+import { TrackMap, type TrackMapStop } from "@/components/domain/track-map";
 import { toaster } from "@/components/ui/toast";
 import { cn } from "@/lib/utils/cn";
 import { vehicleLabel } from "@/lib/utils/vehicle-label";
 import { deliveryWindowLabel } from "@/lib/utils/delivery-window";
-import type { Route } from "@/types/domain";
+import type { Route, RouteStop } from "@/types/domain";
+
+/** Paradas da rota no mapa (ruas do OpenStreetMap), numeradas na ordem planejada. */
+function mapStops(stops: RouteStop[]): TrackMapStop[] {
+  return stops
+    .filter((stop) => Number.isFinite(stop.lat) && Number.isFinite(stop.lng) && (stop.lat !== 0 || stop.lng !== 0))
+    .map((stop) => ({
+      id: stop.id,
+      lat: stop.lat,
+      lng: stop.lng,
+      sequence: stop.sequence,
+      label: stop.label,
+      state: stop.failed ? "failed" : stop.completed ? "delivered" : "open",
+    }));
+}
 
 export default function RoutesPage() {
   const router = useRouter();
@@ -273,10 +287,16 @@ export default function RoutesPage() {
               surface="surface"
               border="default"
               radius="lg"
-              className="h-72 overflow-hidden lg:h-80"
+              // shrink-0: na coluna flex com min-h-0, sem isto o mapa encolhia
+              // até uma faixa de poucos pixels.
+              className="h-72 shrink-0 overflow-hidden lg:h-80"
             >
               {selectedRoute && (
-                <RouteMap points={selectedRoute.stops} className="h-full" />
+                <TrackMap
+                  stops={mapStops(selectedRoute.stops)}
+                  fitKey={`rota-${selectedRoute.id}`}
+                  className="h-full"
+                />
               )}
             </Box>
 
@@ -552,7 +572,7 @@ export default function RoutesPage() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Excluir ${deleting?.name}?`}
+        title={`Excluir ${deleting?.name ?? "a rota"}?`}
         description="Remove o registro de otimização inteiro, incluindo as demais rotas geradas na mesma execução. Esta ação não pode ser desfeita."
         tone="danger"
         confirmLabel="Excluir"
