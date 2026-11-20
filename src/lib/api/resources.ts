@@ -82,7 +82,8 @@ export const routesApi = {
   duplicate: (id: string, input: { plannedDate?: string; driverId?: string; vehicleId?: string }) =>
     run(actions.duplicateRoute(id, input)),
   deliverStop: (routeId: string, orderId: string) => run(actions.deliverRouteStop(routeId, orderId)),
-  optimize: (orderIds: string[]) => run(actions.optimizeRoutes(orderIds)),
+  optimize: (orderIds: string[], plannedDate?: string) =>
+    run(actions.optimizeRoutes(orderIds, plannedDate)),
   validate: (orderIds: string[]) => run(actions.validateOrdersForRoute(orderIds)),
 };
 

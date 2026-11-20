@@ -115,9 +115,9 @@ export default function RoutesPage() {
     if (searchParams.get("new")) router.replace(pathname);
   }
 
-  async function handleGenerate(orderIds: string[]) {
+  async function handleGenerate(orderIds: string[], plannedDate?: string) {
     try {
-      const result = await optimizeMutation.mutateAsync(orderIds);
+      const result = await optimizeMutation.mutateAsync({ orderIds, plannedDate });
       setUnassigned(result.unassignedOrders ?? []);
 
       if (result.simulated) {

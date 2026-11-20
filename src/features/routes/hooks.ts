@@ -35,7 +35,8 @@ export function useRoutes(search?: string) {
 export function useOptimizeRoutes() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (orderIds: string[]) => routesApi.optimize(orderIds),
+    mutationFn: ({ orderIds, plannedDate }: { orderIds: string[]; plannedDate?: string }) =>
+      routesApi.optimize(orderIds, plannedDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["orders"] });

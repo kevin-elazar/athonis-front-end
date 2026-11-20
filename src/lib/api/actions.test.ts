@@ -129,6 +129,13 @@ describe("rotas", () => {
     expect(await dados(actions.validateOrdersForRoute(["1", "2"]))).toEqual({ validOrders: [1], unassigned: [] });
     expect(api.post).toHaveBeenCalledWith("/optimization-routes/validate-orders", { orderIds: [1, 2] });
     expect(await dados(actions.optimizeRoutes(["1"]))).toEqual({ totalRoutes: 0, simulated: false, message: "", unassignedOrders: [] });
+    api.post.mockResolvedValueOnce({ data: null });
+    await actions.optimizeRoutes(["3"], "2099-12-01");
+    expect(api.post).toHaveBeenLastCalledWith(
+      "/optimization-routes/optimize",
+      { orderIds: [3], plannedDate: "2099-12-01" },
+      { timeout: 90_000 },
+    );
   });
 });
 

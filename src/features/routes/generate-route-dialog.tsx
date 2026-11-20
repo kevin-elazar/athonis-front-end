@@ -1,15 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Route as RouteIcon } from "lucide-react";
+import { AlertTriangle, CalendarDays, Route as RouteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Box, Icon, Inline, Stack, Text } from "@/components/ui/primitives";
 import { ORDER_STATUS_META } from "@/constants/domain";
 import type { Order } from "@/types/domain";
+import { formatDateString } from "@/lib/utils/date";
 
 export type UnassignedOrder = { orderId: number; reason: string };
 
@@ -17,7 +19,8 @@ export type GenerateRouteDialogProps = {
   orders: Order[];
   loading?: boolean;
   unassigned?: UnassignedOrder[];
-  onGenerate: (orderIds: string[]) => Promise<void> | void;
+  /** `plannedDate` vazio: cada pedido fica no seu dia (uma rota por dia). */
+  onGenerate: (orderIds: string[], plannedDate?: string) => Promise<void> | void;
   onCancel: () => void;
 };
 
@@ -41,6 +44,12 @@ function blockingReason(order: Order): string | null {
   return null;
 }
 
+/** "20/11" a partir de "2026-11-20". */
+function shortDay(day: string): string {
+  const [, month, date] = day.split("-");
+  return month && date ? `${date}/${month}` : day;
+}
+
 export function GenerateRouteDialog({
   orders,
   loading = false,
@@ -50,6 +59,8 @@ export function GenerateRouteDialog({
 }: GenerateRouteDialogProps) {
   const [search, setSearch] = useState("");
   const [marked, setMarked] = useState<Set<string>>(new Set());
+  const [plannedDate, setPlannedDate] = useState("");
+  const today = formatDateString(new Date());
 
   // Só vale a marcação de pedido que ainda pode ser roteirizado. Depois de
   // gerar, os pedidos que entraram na rota ficam bloqueados ("Já está na
@@ -78,6 +89,16 @@ export function GenerateRouteDialog({
       );
   }, [orders, search]);
 
+  // Dias de entrega dos pedidos marcados: sem um dia escolhido, sai uma rota
+  // por dia para cada motorista.
+  const selectedDays = useMemo(() => {
+    const dias = new Set<string>();
+    for (const order of orders) {
+      if (selected.has(order.id)) dias.add(order.date || today);
+    }
+    return [...dias].sort((a, b) => a.localeCompare(b));
+  }, [orders, selected, today]);
+
   const selectableIds = useMemo(
     () => rows.filter((row) => !row.blocked).map((row) => row.order.id),
     [rows],
@@ -104,9 +125,45 @@ export function GenerateRouteDialog({
       <DialogBody>
         <Stack gap={4}>
           <Text size="body-sm" color="muted">
-            Selecione os pedidos a roteirizar. Eles são agrupados por veículo e motorista —
-            cada dupla gera uma rota.
+            Selecione os pedidos a roteirizar. Eles são agrupados por veículo, motorista e dia de
+            entrega: cada grupo gera uma rota.
           </Text>
+
+          <Stack gap={1}>
+            <Input
+              label="Dia da entrega"
+              type="date"
+              min={today}
+              value={plannedDate}
+              onChange={(event) => setPlannedDate(event.target.value)}
+              disabled={loading}
+            />
+            <Inline justify="between" align="center" gap={2}>
+              <Text size="caption" color="muted">
+                {plannedDate
+                  ? "Todos os pedidos vão para este dia, e a data de entrega deles é atualizada."
+                  : "Em branco: cada pedido fica no dia de entrega dele."}
+              </Text>
+              {plannedDate && (
+                <Button size="sm" variant="tertiary" onClick={() => setPlannedDate("")}>
+                  Usar o dia de cada pedido
+                </Button>
+              )}
+            </Inline>
+          </Stack>
+
+          {!plannedDate && selectedDays.length > 1 && (
+            <Box surface="surface-muted" border="default" radius="md" padding={3}>
+              <Inline gap={2} align="start">
+                <Icon icon={CalendarDays} size="sm" className="text-info mt-0.5" />
+                <Text size="body-sm" data-testid="days-notice">
+                  Os pedidos são de {selectedDays.length} dias diferentes (
+                  {selectedDays.map(shortDay).join(", ")}): será gerada uma rota por dia para cada
+                  motorista. Para juntar tudo numa rota só, escolha o dia acima.
+                </Text>
+              </Inline>
+            </Box>
+          )}
 
           <SearchInput
             value={search}
@@ -198,9 +255,10 @@ export function GenerateRouteDialog({
           variant="primary"
           loading={loading}
           disabled={selected.size === 0}
-          onClick={() => onGenerate(Array.from(selected))}
+          onClick={() => onGenerate(Array.from(selected), plannedDate || undefined)}
         >
-          <Icon icon={RouteIcon} size="sm" /> Gerar rota
+          <Icon icon={RouteIcon} size="sm" />{" "}
+          {!plannedDate && selectedDays.length > 1 ? "Gerar rotas" : "Gerar rota"}
         </Button>
       </DialogFooter>
     </>

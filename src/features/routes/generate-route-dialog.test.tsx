@@ -44,7 +44,7 @@ describe("gerar rota", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Selecionar todos" }));
     await userEvent.click(screen.getByRole("button", { name: /gerar/i }));
-    expect(onGenerate).toHaveBeenCalledWith(["2"]);
+    expect(onGenerate).toHaveBeenCalledWith(["2"], undefined);
   });
 
   it("depois de gerar, os pedidos que entraram na rota saem da seleção", async () => {
@@ -65,6 +65,44 @@ describe("gerar rota", () => {
     );
     expect(screen.getByText("1 de 1 selecionado(s)")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /gerar/i }));
-    expect(onGenerate).toHaveBeenLastCalledWith(["2"]);
+    expect(onGenerate).toHaveBeenLastCalledWith(["2"], undefined);
+  });
+
+  it("pedidos de dias diferentes: avisa que sai uma rota por dia", async () => {
+    const onGenerate = vi.fn();
+    render(
+      <GenerateRouteDialog
+        orders={[pedido("1", { date: "2099-11-19" }), pedido("2", { date: "2099-11-20" })]}
+        onGenerate={onGenerate}
+        onCancel={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Selecionar todos" }));
+
+    expect(screen.getByTestId("days-notice")).toHaveTextContent("2 dias diferentes");
+    expect(screen.getByTestId("days-notice")).toHaveTextContent("19/11, 20/11");
+    await userEvent.click(screen.getByRole("button", { name: /gerar rotas/i }));
+    expect(onGenerate).toHaveBeenCalledWith(["1", "2"], undefined);
+  });
+
+  it("com o dia escolhido, tudo vai para ele e o aviso some", async () => {
+    const onGenerate = vi.fn();
+    render(
+      <GenerateRouteDialog
+        orders={[pedido("1", { date: "2099-11-19" }), pedido("2", { date: "2099-11-20" })]}
+        onGenerate={onGenerate}
+        onCancel={vi.fn()}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Selecionar todos" }));
+    await userEvent.type(screen.getByLabelText("Dia da entrega"), "2099-12-01");
+
+    expect(screen.queryByTestId("days-notice")).not.toBeInTheDocument();
+    expect(screen.getByText(/data de entrega deles é atualizada/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^gerar rota$/i }));
+    expect(onGenerate).toHaveBeenCalledWith(["1", "2"], "2099-12-01");
+
+    await userEvent.click(screen.getByRole("button", { name: "Usar o dia de cada pedido" }));
+    expect(screen.getByTestId("days-notice")).toBeInTheDocument();
   });
 });

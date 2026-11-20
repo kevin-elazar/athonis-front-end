@@ -353,7 +353,13 @@ export async function validateOrdersForRoute(orderIds: string[]): Promise<
 }
 
 /** Gera as rotas otimizadas para os pedidos selecionados. */
-export async function optimizeRoutes(orderIds: string[]): Promise<
+/** Tempo máximo da geração de rotas (geocodificação + otimização de cada grupo). */
+const OPTIMIZE_TIMEOUT_MS = 90_000;
+
+export async function optimizeRoutes(
+  orderIds: string[],
+  plannedDate?: string,
+): Promise<
   ActionResult<{
     totalRoutes: number;
     simulated: boolean;
@@ -363,7 +369,13 @@ export async function optimizeRoutes(orderIds: string[]): Promise<
 > {
   return request(async (api) => {
     const { data } = await api
-      .post("/optimization-routes/optimize", { orderIds: orderIds.map(Number) })
+      .post(
+        "/optimization-routes/optimize",
+        { orderIds: orderIds.map(Number), ...(plannedDate ? { plannedDate } : {}) },
+        // Uma otimização no Google por motorista e dia, uma depois da outra:
+        // com várias rotas passa fácil dos 10 s padrão do cliente.
+        { timeout: OPTIMIZE_TIMEOUT_MS },
+      )
       .catch((error: unknown) => {
         // Quando nenhum pedido é roteirizável, a API manda o motivo de cada
         // um; sem isso a tela mostrava só "nenhum pedido válido".
