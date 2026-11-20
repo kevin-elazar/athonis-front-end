@@ -154,6 +154,8 @@ export type Route = {
   stops: RouteStop[];
   startedAt: string | null;
   region: string;
+  /** Dia da entrega (AAAA-MM-DD). */
+  plannedDate: string | null;
   totalDistanceKm: number;
   totalDurationMin: number;
   /**

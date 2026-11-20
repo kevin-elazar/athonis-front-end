@@ -423,7 +423,15 @@ export function OrderForm({
                     emptyMessage="Nenhum motorista cadastrado"
                     options={driverOptions}
                     value={field.value ? [field.value] : []}
-                    onValueChange={(value) => field.onChange(value[0] ?? null)}
+                    onValueChange={(value) => {
+                      const driverId = value[0] ?? null;
+                      field.onChange(driverId);
+                      // O veículo habitual do motorista vem junto, se ainda não há veículo.
+                      const habitual = vehicles.find((vehicle) => vehicle.driverId === driverId);
+                      if (driverId && habitual && !watch("vehicleId")) {
+                        setValue("vehicleId", habitual.id, { shouldValidate: true });
+                      }
+                    }}
                   />
                 )}
               />
@@ -440,7 +448,15 @@ export function OrderForm({
                     emptyMessage="Nenhum veículo cadastrado"
                     options={vehicleOptions}
                     value={field.value ? [field.value] : []}
-                    onValueChange={(value) => field.onChange(value[0] ?? null)}
+                    onValueChange={(value) => {
+                      const vehicleId = value[0] ?? null;
+                      field.onChange(vehicleId);
+                      // E o motorista habitual do veículo, se ainda não há motorista.
+                      const veiculo = vehicles.find((vehicle) => vehicle.id === vehicleId);
+                      if (veiculo?.driverId && !watch("driverId")) {
+                        setValue("driverId", veiculo.driverId, { shouldValidate: true });
+                      }
+                    }}
                   />
                 )}
               />

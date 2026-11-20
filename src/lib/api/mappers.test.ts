@@ -192,3 +192,29 @@ describe("rota", () => {
     expect(rota.region).toBe("—");
   });
 });
+
+describe("datas do pedido", () => {
+  const base = {
+    order_id: 1,
+    title: "x",
+    quantity: 1,
+    delivery_street: "Rua A",
+    delivery_number: "1",
+    delivery_district: "Centro",
+    delivery_city: "Jaraguá do Sul",
+    delivery_state: "SC",
+    delivery_zipcode: "89251-000",
+  } as ApiOrder;
+
+  it("data de entrega pura não muda de dia", () => {
+    expect(mapOrder({ ...base, delivery_date: "2026-11-22" }).date).toBe("2026-11-22");
+    expect(mapOrder({ ...base, delivery_date: "2026-11-22T00:00:00.000Z" }).date).toBe("2026-11-22");
+  });
+
+  it("sem data de entrega, usa o dia da criação no fuso local (não em UTC)", () => {
+    const criado = new Date(2026, 10, 19, 23, 30); // 23:30 local de 19/11
+    expect(mapOrder({ ...base, delivery_date: null, created_at: criado.toISOString() }).date).toBe(
+      "2026-11-19",
+    );
+  });
+});

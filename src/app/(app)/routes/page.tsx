@@ -61,7 +61,12 @@ import type { Route, RouteStop } from "@/types/domain";
 /** Paradas da rota no mapa (ruas do OpenStreetMap), numeradas na ordem planejada. */
 function mapStops(stops: RouteStop[]): TrackMapStop[] {
   return stops
-    .filter((stop) => Number.isFinite(stop.lat) && Number.isFinite(stop.lng) && (stop.lat !== 0 || stop.lng !== 0))
+    .filter(
+      (stop) =>
+        Number.isFinite(stop.lat) &&
+        Number.isFinite(stop.lng) &&
+        (stop.lat !== 0 || stop.lng !== 0),
+    )
     .map((stop) => ({
       id: stop.id,
       lat: stop.lat,
@@ -70,6 +75,19 @@ function mapStops(stops: RouteStop[]): TrackMapStop[] {
       label: stop.label,
       state: stop.failed ? "failed" : stop.completed ? "delivered" : "open",
     }));
+}
+
+/** "sex, 21/11" (lista) ou "sexta-feira, 21/11/2026" (detalhe), a partir de AAAA-MM-DD. */
+function routeDay(day: string | null, long = false): string | null {
+  if (!day) return null;
+  const date = new Date(`${day.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(
+    "pt-BR",
+    long
+      ? { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }
+      : { weekday: "short", day: "2-digit", month: "2-digit" },
+  );
 }
 
 export default function RoutesPage() {
@@ -93,6 +111,9 @@ export default function RoutesPage() {
     () => searchParams.get("new") === "1",
   );
   const [deleting, setDeleting] = useState<Route | null>(null);
+  // Concluir pelo painel baixa como entregues todas as paradas em aberto:
+  // precisa de confirmação, um clique sem querer registraria entregas falsas.
+  const [completing, setCompleting] = useState<Route | null>(null);
   const [duplicating, setDuplicating] = useState<Route | null>(null);
 
   const effectiveSelectedId = selectedId ?? routes?.[0]?.id ?? null;
@@ -117,7 +138,10 @@ export default function RoutesPage() {
 
   async function handleGenerate(orderIds: string[], plannedDate?: string) {
     try {
-      const result = await optimizeMutation.mutateAsync({ orderIds, plannedDate });
+      const result = await optimizeMutation.mutateAsync({
+        orderIds,
+        plannedDate,
+      });
       setUnassigned(result.unassignedOrders ?? []);
 
       if (result.simulated) {
@@ -173,6 +197,7 @@ export default function RoutesPage() {
   async function handleComplete(route: Route) {
     try {
       await completeMutation.mutateAsync(route.id);
+      setCompleting(null);
       toaster.success({
         title: "Rota concluída",
         description:
@@ -270,7 +295,13 @@ export default function RoutesPage() {
                     <Stack gap={0.5}>
                       <Text weight="medium">{route.name}</Text>
                       <Text size="caption" color="muted">
-                        {route.region} · {driverName(route)}
+                        {[
+                          routeDay(route.plannedDate),
+                          route.region,
+                          driverName(route),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </Text>
                     </Stack>
                     <StatusBadge tone={ROUTE_STATUS_META[route.status].tone}>
@@ -309,7 +340,12 @@ export default function RoutesPage() {
                         {selectedRoute.name}
                       </Text>
                       <Text size="body-sm" color="muted">
-                        {selectedRoute.region}
+                        {[
+                          routeDay(selectedRoute.plannedDate, true),
+                          selectedRoute.region,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </Text>
                     </Stack>
                     <Inline gap={2} align="center">
@@ -335,7 +371,7 @@ export default function RoutesPage() {
                           size="sm"
                           variant="primary"
                           loading={completeMutation.isPending}
-                          onClick={() => handleComplete(selectedRoute)}
+                          onClick={() => setCompleting(selectedRoute)}
                         >
                           <Icon icon={CheckCircle2} size="sm" /> Concluir
                         </Button>
@@ -369,8 +405,8 @@ export default function RoutesPage() {
 
                   {selectedRoute.duplicatedFromRouteId && (
                     <Text size="body-sm" color="muted">
-                      Duplicada da Rota #{selectedRoute.duplicatedFromRouteId}, que
-                      havia sido cancelada.
+                      Duplicada da Rota #{selectedRoute.duplicatedFromRouteId},
+                      que havia sido cancelada.
                     </Text>
                   )}
 
@@ -479,7 +515,11 @@ export default function RoutesPage() {
                                 {stop.failed && (
                                   <Text size="caption" color="danger">
                                     Motivo:{" "}
-                                    {OCCURRENCE_LABEL[stop.occurrenceType ?? "other"]}
+                                    {
+                                      OCCURRENCE_LABEL[
+                                        stop.occurrenceType ?? "other"
+                                      ]
+                                    }
                                   </Text>
                                 )}
                                 {stop.driverNotes && (
@@ -492,10 +532,13 @@ export default function RoutesPage() {
                             <Inline gap={2} align="center" className="shrink-0">
                               {stop.closedAt ? (
                                 <Text size="caption" color="muted">
-                                  {new Date(stop.closedAt).toLocaleTimeString("pt-BR", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
+                                  {new Date(stop.closedAt).toLocaleTimeString(
+                                    "pt-BR",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    },
+                                  )}
                                 </Text>
                               ) : (
                                 order && (
@@ -511,8 +554,8 @@ export default function RoutesPage() {
                                     : stop.failed
                                       ? "danger"
                                       : ORDER_STATUS_META[
-                                        order?.status ?? "pending"
-                                      ].tone
+                                          order?.status ?? "pending"
+                                        ].tone
                                 }
                               >
                                 {stop.completed
@@ -520,8 +563,8 @@ export default function RoutesPage() {
                                   : stop.failed
                                     ? "Não entregue"
                                     : ORDER_STATUS_META[
-                                      order?.status ?? "pending"
-                                    ].label}
+                                        order?.status ?? "pending"
+                                      ].label}
                               </StatusBadge>
                             </Inline>
                           </Inline>
@@ -570,10 +613,27 @@ export default function RoutesPage() {
       />
 
       <ConfirmDialog
+        open={!!completing}
+        onOpenChange={(open) => !open && setCompleting(null)}
+        title={`Concluir ${completing?.name ?? "a rota"}?`}
+        description={(() => {
+          const abertas = completing
+            ? completing.stops.filter((stop) => !stop.completed && !stop.failed).length
+            : 0;
+          return abertas > 0
+            ? `${abertas} parada(s) ainda sem baixa serão registradas como entregues agora. Use só se as entregas foram feitas e o entregador não baixou pelo aplicativo.`
+            : "Todas as paradas já têm baixa. A rota é encerrada e o motorista e o veículo ficam livres.";
+        })()}
+        confirmLabel="Concluir rota"
+        loading={completeMutation.isPending}
+        onConfirm={() => completing && handleComplete(completing)}
+      />
+
+      <ConfirmDialog
         open={!!deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Excluir ${deleting?.name ?? "a rota"}?`}
-        description="Remove o registro de otimização inteiro, incluindo as demais rotas geradas na mesma execução. Esta ação não pode ser desfeita."
+        description="Apaga só esta rota. Os pedidos dela voltam para a fila, prontos para outra rota. Esta ação não pode ser desfeita."
         tone="danger"
         confirmLabel="Excluir"
         loading={deleteMutation.isPending}

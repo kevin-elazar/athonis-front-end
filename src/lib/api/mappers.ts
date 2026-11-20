@@ -32,13 +32,24 @@ const toStringId = (value: number | string | null | undefined): string =>
 const toNullableId = (value: number | string | null | undefined): string | null =>
   value === null || value === undefined || value === 0 ? null : String(value);
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * Dia AAAA-MM-DD. Uma data pura ("2026-11-22", ou a meia-noite UTC com que o
+ * banco serializa uma coluna `date`) é mantida como está. Um instante (data e
+ * hora) vira o dia no fuso de quem está vendo: antes virava o dia em UTC, e
+ * um pedido criado às 23h aparecia com a data do dia seguinte.
+ */
 const toIsoDate = (value: string | null | undefined): string => {
   if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value) || /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z$/.test(value)) {
+    return value.slice(0, 10);
+  }
   // O backend devolve "YYYY-MM-DD HH:mm:ss" (SQLite) ou ISO.
   const normalized = value.includes("T") ? value : value.replace(" ", "T");
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 };
 
 
@@ -516,6 +527,7 @@ export function mapRoute(route: ApiRoute): Route {
     stops,
     startedAt: route.started_at ?? null,
     region: route.region || orders[0]?.delivery_city || "—",
+    plannedDate: route.planned_date ? String(route.planned_date).slice(0, 10) : null,
     totalDistanceKm: (route.total_distance_m ?? 0) / 1000,
     totalDurationMin: route.total_duration_min ?? 0,
     simulated: route.simulated ?? false,

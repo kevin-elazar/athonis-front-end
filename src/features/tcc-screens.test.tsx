@@ -237,6 +237,7 @@ const rotaCancelada: Route = {
   ],
   startedAt: haMin(200),
   region: "Centro",
+  plannedDate: "2026-11-21",
   totalDistanceKm: 25.2,
   totalDurationMin: 132,
   simulated: false,

@@ -110,7 +110,9 @@ export default function OrdersPage() {
         sortAccessor: (order) => order.id,
         cell: (order) => (
           <Stack gap={0}>
-            <Text weight="medium">{order.id}</Text>
+            <Text weight="medium">
+              {order.id} · {order.title}
+            </Text>
             <Text size="caption" color="muted">
               {customerName(order.customerId)}
             </Text>
@@ -309,7 +311,9 @@ export default function OrdersPage() {
           {detail && (
             <>
               <DrawerHeader>
-                <DrawerTitle>{detail.id}</DrawerTitle>
+                <DrawerTitle>
+                  Pedido {detail.id} · {detail.title}
+                </DrawerTitle>
               </DrawerHeader>
               <DrawerBody>
                 <Stack gap={4}>
