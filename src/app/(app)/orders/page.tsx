@@ -40,6 +40,7 @@ import { useDrivers } from "@/features/drivers/hooks";
 import { useVehicles } from "@/features/vehicles/hooks";
 import { deliveryWindowLabel } from "@/lib/utils/delivery-window";
 import { OrderForm } from "@/features/orders/order-form";
+import { OrderAttempts } from "@/features/orders/order-attempts";
 import { OrderImportDialog } from "@/features/orders/order-import-dialog";
 import { toaster } from "@/components/ui/toast";
 import type { OrderFormInput } from "@/lib/validation/order";
@@ -145,9 +146,16 @@ export default function OrdersPage() {
         id: "status",
         header: "Status",
         cell: (order) => (
-          <StatusBadge tone={ORDER_STATUS_META[order.status].tone}>
-            {ORDER_STATUS_META[order.status].label}
-          </StatusBadge>
+          <Stack gap={0.5} className="items-start">
+            <StatusBadge tone={ORDER_STATUS_META[order.status].tone}>
+              {ORDER_STATUS_META[order.status].label}
+            </StatusBadge>
+            {order.attempts > 1 && (
+              <Text size="caption" color="muted">
+                {order.attempts}ª tentativa
+              </Text>
+            )}
+          </Stack>
         ),
       },
     ],
@@ -329,6 +337,7 @@ export default function OrdersPage() {
                       {ORDER_STATUS_META[detail.status].label}
                     </StatusBadge>
                   </Inline>
+                  <OrderAttempts orderId={detail.id} />
                 </Stack>
               </DrawerBody>
             </>

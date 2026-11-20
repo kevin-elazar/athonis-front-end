@@ -69,6 +69,7 @@ export const ordersApi = {
   create: (input: OrderFormInput) => run(actions.createOrder(input)),
   update: (id: string, input: OrderFormInput) => run(actions.updateOrder(id, input)),
   remove: (id: string) => run(actions.deleteOrder(id)),
+  attempts: (id: string) => run(actions.listOrderAttempts(id)),
   import: (formData: FormData): Promise<OrderImportResult> => run(actions.importOrders(formData)),
 };
 

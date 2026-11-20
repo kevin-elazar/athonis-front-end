@@ -8,6 +8,7 @@ import type {
   Customer,
   Driver,
   Order,
+  OrderAttempt,
   Route,
   RouteStop,
   Vehicle,
@@ -333,7 +334,39 @@ export type ApiOrder = {
   delivery_number: string;
   delivery_complement?: string | null;
   created_at?: string;
+  attempts?: number;
+  last_failure?: { route_id: number; occurred_at: string | null; occurrence_type: string | null } | null;
 };
+
+export type ApiOrderAttempt = {
+  attempt: number | null;
+  route_id: number;
+  route_status: string;
+  planned_date: string | null;
+  driver_name: string | null;
+  vehicle_plate: string | null;
+  status: OrderAttempt["status"];
+  arrived_at: string | null;
+  completed_at: string | null;
+  occurrence_type: string | null;
+  notes: string | null;
+};
+
+export function mapOrderAttempt(item: ApiOrderAttempt): OrderAttempt {
+  return {
+    attempt: item.attempt,
+    routeId: String(item.route_id),
+    routeStatus: item.route_status,
+    plannedDate: item.planned_date,
+    driverName: item.driver_name,
+    vehiclePlate: item.vehicle_plate,
+    status: item.status,
+    arrivedAt: item.arrived_at,
+    completedAt: item.completed_at,
+    occurrenceType: (item.occurrence_type as OccurrenceType | null) ?? null,
+    notes: item.notes,
+  };
+}
 
 export function formatDeliveryAddress(order: ApiOrder): string {
   return [
@@ -370,6 +403,14 @@ export function mapOrder(order: ApiOrder): Order {
     city: order.delivery_city ?? "",
     state: order.delivery_state ?? "",
     zipCode: order.delivery_zipcode ?? "",
+    attempts: order.attempts ?? 0,
+    lastFailure: order.last_failure
+      ? {
+          routeId: String(order.last_failure.route_id),
+          occurredAt: order.last_failure.occurred_at,
+          occurrenceType: (order.last_failure.occurrence_type as OccurrenceType | null) ?? null,
+        }
+      : null,
   };
 }
 

@@ -101,6 +101,26 @@ export type Order = {
   city: string;
   state: string;
   zipCode: string;
+  /** Tentativas de entrega feitas ou em curso (passagens por rotas, sem as canceladas antes da visita). */
+  attempts: number;
+  /** A última tentativa que não deu certo. */
+  lastFailure: { routeId: string; occurredAt: string | null; occurrenceType: OccurrenceType | null } | null;
+};
+
+/** Uma passagem do pedido por uma rota. */
+export type OrderAttempt = {
+  /** Null quando a rota foi cancelada antes da visita (não conta como tentativa). */
+  attempt: number | null;
+  routeId: string;
+  routeStatus: string;
+  plannedDate: string | null;
+  driverName: string | null;
+  vehiclePlate: string | null;
+  status: "planned" | "in_route" | "delivered" | "failed" | "returned";
+  arrivedAt: string | null;
+  completedAt: string | null;
+  occurrenceType: OccurrenceType | null;
+  notes: string | null;
 };
 
 export type RouteStatus = "planned" | "active" | "completed" | "delayed" | "cancelled";

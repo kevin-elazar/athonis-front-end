@@ -15,6 +15,7 @@ import {
   mapCustomer,
   mapDriver,
   mapOrder,
+  mapOrderAttempt,
   mapRoute,
   mapVehicle,
   toApiClient,
@@ -26,6 +27,7 @@ import {
   type ApiCompany,
   type ApiDriver,
   type ApiOrder,
+  type ApiOrderAttempt,
   type ApiRoute,
   type ApiVehicle,
 } from "./mappers";
@@ -41,6 +43,7 @@ import type {
   FieldRouteSummary,
   LiveRoute,
   Order,
+  OrderAttempt,
   RouteComparison,
   OrderImportResult,
   Route,
@@ -200,6 +203,14 @@ export async function listOrders(): Promise<ActionResult<Order[]>> {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "order_id", order: "DESC" },
     });
     return (data.items ?? []).map(mapOrder);
+  });
+}
+
+/** Tentativas de entrega do pedido: cada passagem por uma rota e o resultado. */
+export async function listOrderAttempts(orderId: string): Promise<ActionResult<OrderAttempt[]>> {
+  return request(async (api) => {
+    const { data } = await api.get<ApiOrderAttempt[]>(`/orders/${orderId}/attempts`);
+    return (data ?? []).map(mapOrderAttempt);
   });
 }
 

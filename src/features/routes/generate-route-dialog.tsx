@@ -9,7 +9,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Box, Icon, Inline, Stack, Text } from "@/components/ui/primitives";
-import { ORDER_STATUS_META } from "@/constants/domain";
+import { OCCURRENCE_LABEL, ORDER_STATUS_META } from "@/constants/domain";
 import type { Order } from "@/types/domain";
 import { formatDateString } from "@/lib/utils/date";
 
@@ -33,15 +33,30 @@ function blockingReason(order: Order): string | null {
   // Um pedido pertence a uma rota só (order.route_id): roteirizar de novo
   // criaria duas rotas disputando a mesma entrega. Para mudar, cancele ou
   // exclua a rota atual e o pedido volta para a fila.
-  if (order.routeId) return `Já está na Rota #${order.routeId}`;
+  // A exceção é o não entregue: a tentativa anterior fica guardada na rota
+  // dela, e ele pode ir para uma rota nova (nova tentativa).
+  if (order.status === "delivered") return "Já entregue";
+  if (order.status === "cancelled") return "Cancelado";
+  if (order.routeId && order.status !== "failed") return `Já está na Rota #${order.routeId}`;
   if (order.status === "in_route") return "Em rota";
   if (!order.driverId && !order.vehicleId) return "Sem motorista e sem veículo";
   if (!order.vehicleId) return "Sem veículo";
   if (!order.driverId) return "Sem motorista";
   if (!order.street || !order.city || !order.state) return "Endereço incompleto";
-  if (order.status === "delivered") return "Já entregue";
-  if (order.status === "cancelled") return "Cancelado";
   return null;
+}
+
+/** "Nova tentativa (2ª) · última: Cliente ausente em 18/11" para pedido não entregue. */
+function retryLabel(order: Order): string | null {
+  if (order.status !== "failed") return null;
+  const proxima = Math.max(order.attempts, 1) + 1;
+  const falha = order.lastFailure;
+  const motivo = falha?.occurrenceType ? OCCURRENCE_LABEL[falha.occurrenceType] : null;
+  const quando = falha?.occurredAt
+    ? new Date(falha.occurredAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+    : null;
+  const ultima = [motivo, quando ? `em ${quando}` : null].filter(Boolean).join(" ");
+  return `Nova tentativa (${proxima}ª)${ultima ? ` · última: ${ultima}` : ""}`;
 }
 
 /** "20/11" a partir de "2026-11-20". */
@@ -233,6 +248,11 @@ export function GenerateRouteDialog({
                       {blocked && (
                         <Text size="caption" className="text-warning">
                           Não roteirizável: {blocked}
+                        </Text>
+                      )}
+                      {!blocked && retryLabel(order) && (
+                        <Text size="caption" className="text-info" data-testid={`retry-${order.id}`}>
+                          {retryLabel(order)}
                         </Text>
                       )}
                     </Stack>

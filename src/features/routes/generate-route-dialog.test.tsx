@@ -105,4 +105,31 @@ describe("gerar rota", () => {
     await userEvent.click(screen.getByRole("button", { name: "Usar o dia de cada pedido" }));
     expect(screen.getByTestId("days-notice")).toBeInTheDocument();
   });
+
+  it("pedido não entregue de rota encerrada pode ir para uma nova tentativa", async () => {
+    const onGenerate = vi.fn();
+    render(
+      <GenerateRouteDialog
+        orders={[
+          pedido("1", {
+            routeId: "11",
+            status: "failed",
+            attempts: 1,
+            lastFailure: { routeId: "11", occurredAt: "2026-11-18T13:05:00Z", occurrenceType: "customer_absent" },
+          }),
+          pedido("2", { routeId: "11", status: "delivered" }),
+        ]}
+        onGenerate={onGenerate}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("retry-1")).toHaveTextContent(
+      "Nova tentativa (2ª) · última: Cliente ausente em 18/11",
+    );
+    expect(screen.getByText("Não roteirizável: Já entregue")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Selecionar todos" }));
+    await userEvent.click(screen.getByRole("button", { name: /gerar rota/i }));
+    expect(onGenerate).toHaveBeenCalledWith(["1"], undefined);
+  });
 });
