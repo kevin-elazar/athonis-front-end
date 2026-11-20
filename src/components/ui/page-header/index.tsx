@@ -27,8 +27,8 @@ export function PageHeader({
       <Inline justify="between" align="start" gap={4} wrap>
         <Inline gap={4} align="center">
           {Icon && (
-            <Inline className="text-primary bg-primary/20 size-18 items-center justify-center rounded-xl">
-              <Icon size={48} />
+            <Inline className="from-primary to-primary-active text-primary-foreground ring-primary/20 size-14 items-center justify-center rounded-2xl bg-gradient-to-br shadow-lg ring-4 shadow-[color-mix(in_srgb,var(--primary)_35%,transparent)]">
+              <Icon size={28} strokeWidth={2} />
             </Inline>
           )}
           <Stack gap={1}>

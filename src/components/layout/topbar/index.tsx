@@ -43,7 +43,7 @@ export function Topbar({
   return (
     <header
       className={cn(
-        "border-border-subtle bg-primary/5 flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4",
+        "border-border-subtle bg-surface/70 supports-[backdrop-filter]:bg-surface/60 flex h-16 shrink-0 backdrop-blur-md items-center justify-between gap-4 border-b px-4",
         className,
       )}
     >
@@ -64,11 +64,11 @@ export function Topbar({
       <button
         type="button"
         onClick={onOpenCommandMenu}
-        className="border-border bg-background text-body-sm text-muted hover:border-primary/50 flex min-w-sm flex-1 items-center gap-2 rounded-md border px-3 py-1.5 transition-colors"
+        className="border-border bg-background text-body-sm text-muted hover:border-primary/50 hover:text-foreground focus-visible:ring-primary/40 flex min-w-sm flex-1 items-center gap-2 rounded-lg border px-3 py-2 shadow-xs transition-colors focus-visible:ring-2 focus-visible:outline-none"
       >
         <Icon icon={Search} size="sm" />
-        <span className="flex-1 text-left">Buscar...</span>
-        <span className="text-caption">⌘K</span>
+        <span className="flex-1 text-left">Buscar pedidos, telas e ações...</span>
+        <kbd className="border-border bg-surface-muted text-caption rounded border px-1.5 py-0.5 font-mono">Ctrl K</kbd>
       </button>
 
       <div className="flex w-full items-center justify-end gap-2">
