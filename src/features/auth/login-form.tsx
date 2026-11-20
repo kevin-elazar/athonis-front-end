@@ -4,9 +4,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, Mail } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { loginSchema, type LoginInput } from "@/lib/validation/auth";
 import { login } from "@/lib/auth/authentication";
+import { safeRedirectPath } from "@/lib/auth/redirect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,6 +23,7 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -38,7 +40,7 @@ export function LoginForm() {
       return;
     }
 
-    const redirectTo = searchParams.get("redirect") ?? "/dashboard";
+    const redirectTo = safeRedirectPath(searchParams.get("redirect"));
     router.push(redirectTo);
     router.refresh();
   }
@@ -57,11 +59,22 @@ export function LoginForm() {
         />
         <Input
           label="Senha"
-          type="password"
+          type={showPassword ? "text" : "password"}
           autoComplete="current-password"
           placeholder="••••••••"
           error={errors.password?.message}
           prefix={<Icon icon={Lock} size="sm" />}
+          suffix={
+            <button
+              type="button"
+              onClick={() => setShowPassword((atual) => !atual)}
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              aria-pressed={showPassword}
+              className="rounded p-0.5 text-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <Icon icon={showPassword ? EyeOff : Eye} size="sm" />
+            </button>
+          }
           {...register("password")}
         />
 

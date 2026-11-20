@@ -21,6 +21,15 @@ export function useOrders(search?: string) {
   });
 }
 
+/** Tentativas de entrega de um pedido (abre no detalhe do pedido). */
+export function useOrderAttempts(orderId: string | null) {
+  return useQuery({
+    queryKey: [...QUERY_KEY, "attempts", orderId],
+    queryFn: () => ordersApi.attempts(orderId as string),
+    enabled: !!orderId,
+  });
+}
+
 export function useCreateOrder() {
   const queryClient = useQueryClient();
   return useMutation({

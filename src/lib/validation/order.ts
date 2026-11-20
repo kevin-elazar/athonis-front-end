@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt";
 
 /**
  * Espelha CreateOrderDto no backend. O endereço de entrega é estruturado e
@@ -11,7 +12,7 @@ export const orderFormSchema = z.object({
   title: z.string().min(2, "Informe o título do pedido").max(100),
   quantity: z.coerce.number().int().min(1, "Informe a quantidade"),
   urgency: z.enum(["low", "normal", "high", "critical"], { error: "Selecione a urgência" }),
-  status: z.enum(["pending", "planned", "in_route", "delivered", "delayed", "cancelled"], { error: "Selecione o status" }),
+  status: z.enum(["pending", "planned", "in_route", "delivered", "failed", "delayed", "cancelled"], { error: "Selecione o status" }),
   // Opcional: nem toda entrega tem valor declarado, e gravar zero afirmaria
   // que a mercadoria não vale nada.
   value: z.preprocess(
@@ -21,14 +22,16 @@ export const orderFormSchema = z.object({
   date: z.string().min(1, "Informe a data"),
   // Vazio = dia todo. A maioria das entregas não tem hora marcada.
   deliveryWindow: z.string().optional(),
-  driverId: z.string().nullable(),
-  vehicleId: z.string().nullable(),
+  // Sem motorista e veículo o pedido não entra em rota nenhuma (a
+  // roteirização agrupa por esse par), então os dois são obrigatórios.
+  driverId: z.string().nullable().refine((valor) => !!valor, "Selecione o motorista"),
+  vehicleId: z.string().nullable().refine((valor) => !!valor, "Selecione o veículo"),
   street: z.string().min(3, "Informe a rua"),
   number: z.string().min(1, "Informe o número"),
   district: z.string().min(2, "Informe o bairro"),
   city: z.string().min(2, "Informe a cidade"),
   state: z.string({ error: "Selecione a UF" }).length(2, "Use a sigla da UF (ex: SP)"),
-  zipCode: z.string().min(8, "CEP inválido").max(10, "CEP inválido"),
+  zipCode: z.string({ error: "Informe o CEP" }).min(8, "CEP inválido").max(10, "CEP inválido"),
 });
 
 export type OrderFormInput = z.infer<typeof orderFormSchema>;

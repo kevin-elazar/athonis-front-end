@@ -5,9 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
+  Copy,
   Play,
-  RouteIcon,
   Route as RouteIconLucide,
+  RouteIcon,
   Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -30,7 +31,11 @@ import {
   Stack,
   Text,
 } from "@/components/ui/primitives";
-import { ORDER_STATUS_META, ROUTE_STATUS_META } from "@/constants/domain";
+import {
+  OCCURRENCE_LABEL,
+  ORDER_STATUS_META,
+  ROUTE_STATUS_META,
+} from "@/constants/domain";
 import {
   useCompleteRoute,
   useDeleteRoute,
@@ -45,12 +50,45 @@ import {
   GenerateRouteDialog,
   type UnassignedOrder,
 } from "@/features/routes/generate-route-dialog";
-import { RouteMap } from "@/components/domain/route-map";
+import { DuplicateRouteDialog } from "@/features/routes/duplicate-route-dialog";
+import { TrackMap, type TrackMapStop } from "@/components/domain/track-map";
 import { toaster } from "@/components/ui/toast";
 import { cn } from "@/lib/utils/cn";
 import { vehicleLabel } from "@/lib/utils/vehicle-label";
 import { deliveryWindowLabel } from "@/lib/utils/delivery-window";
-import type { Route } from "@/types/domain";
+import type { Route, RouteStop } from "@/types/domain";
+
+/** Paradas da rota no mapa (ruas do OpenStreetMap), numeradas na ordem planejada. */
+function mapStops(stops: RouteStop[]): TrackMapStop[] {
+  return stops
+    .filter(
+      (stop) =>
+        Number.isFinite(stop.lat) &&
+        Number.isFinite(stop.lng) &&
+        (stop.lat !== 0 || stop.lng !== 0),
+    )
+    .map((stop) => ({
+      id: stop.id,
+      lat: stop.lat,
+      lng: stop.lng,
+      sequence: stop.sequence,
+      label: stop.label,
+      state: stop.failed ? "failed" : stop.completed ? "delivered" : "open",
+    }));
+}
+
+/** "sex, 21/11" (lista) ou "sexta-feira, 21/11/2026" (detalhe), a partir de AAAA-MM-DD. */
+function routeDay(day: string | null, long = false): string | null {
+  if (!day) return null;
+  const date = new Date(`${day.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(
+    "pt-BR",
+    long
+      ? { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }
+      : { weekday: "short", day: "2-digit", month: "2-digit" },
+  );
+}
 
 export default function RoutesPage() {
   const router = useRouter();
@@ -73,6 +111,10 @@ export default function RoutesPage() {
     () => searchParams.get("new") === "1",
   );
   const [deleting, setDeleting] = useState<Route | null>(null);
+  // Concluir pelo painel baixa como entregues todas as paradas em aberto:
+  // precisa de confirmação, um clique sem querer registraria entregas falsas.
+  const [completing, setCompleting] = useState<Route | null>(null);
+  const [duplicating, setDuplicating] = useState<Route | null>(null);
 
   const effectiveSelectedId = selectedId ?? routes?.[0]?.id ?? null;
   const selectedRoute =
@@ -94,9 +136,12 @@ export default function RoutesPage() {
     if (searchParams.get("new")) router.replace(pathname);
   }
 
-  async function handleGenerate(orderIds: string[]) {
+  async function handleGenerate(orderIds: string[], plannedDate?: string) {
     try {
-      const result = await optimizeMutation.mutateAsync(orderIds);
+      const result = await optimizeMutation.mutateAsync({
+        orderIds,
+        plannedDate,
+      });
       setUnassigned(result.unassignedOrders ?? []);
 
       if (result.simulated) {
@@ -152,6 +197,7 @@ export default function RoutesPage() {
   async function handleComplete(route: Route) {
     try {
       await completeMutation.mutateAsync(route.id);
+      setCompleting(null);
       toaster.success({
         title: "Rota concluída",
         description:
@@ -249,7 +295,13 @@ export default function RoutesPage() {
                     <Stack gap={0.5}>
                       <Text weight="medium">{route.name}</Text>
                       <Text size="caption" color="muted">
-                        {route.region} · {driverName(route)}
+                        {[
+                          routeDay(route.plannedDate),
+                          route.region,
+                          driverName(route),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </Text>
                     </Stack>
                     <StatusBadge tone={ROUTE_STATUS_META[route.status].tone}>
@@ -266,10 +318,16 @@ export default function RoutesPage() {
               surface="surface"
               border="default"
               radius="lg"
-              className="h-72 overflow-hidden lg:h-80"
+              // shrink-0: na coluna flex com min-h-0, sem isto o mapa encolhia
+              // até uma faixa de poucos pixels.
+              className="h-72 shrink-0 overflow-hidden lg:h-80"
             >
               {selectedRoute && (
-                <RouteMap points={selectedRoute.stops} className="h-full" />
+                <TrackMap
+                  stops={mapStops(selectedRoute.stops)}
+                  fitKey={`rota-${selectedRoute.id}`}
+                  className="h-full"
+                />
               )}
             </Box>
 
@@ -282,7 +340,12 @@ export default function RoutesPage() {
                         {selectedRoute.name}
                       </Text>
                       <Text size="body-sm" color="muted">
-                        {selectedRoute.region}
+                        {[
+                          routeDay(selectedRoute.plannedDate, true),
+                          selectedRoute.region,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </Text>
                     </Stack>
                     <Inline gap={2} align="center">
@@ -308,11 +371,22 @@ export default function RoutesPage() {
                           size="sm"
                           variant="primary"
                           loading={completeMutation.isPending}
-                          onClick={() => handleComplete(selectedRoute)}
+                          onClick={() => setCompleting(selectedRoute)}
                         >
                           <Icon icon={CheckCircle2} size="sm" /> Concluir
                         </Button>
                       )}
+
+                      {selectedRoute.status === "cancelled" &&
+                        selectedRoute.returnedStopCount > 0 && (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => setDuplicating(selectedRoute)}
+                          >
+                            <Icon icon={Copy} size="sm" /> Duplicar
+                          </Button>
+                        )}
 
                       {/* Rota em andamento ou já concluída não se apaga: os
                           pedidos dela têm entrega registrada. */}
@@ -328,6 +402,37 @@ export default function RoutesPage() {
                       )}
                     </Inline>
                   </Inline>
+
+                  {selectedRoute.duplicatedFromRouteId && (
+                    <Text size="body-sm" color="muted">
+                      Duplicada da Rota #{selectedRoute.duplicatedFromRouteId},
+                      que havia sido cancelada.
+                    </Text>
+                  )}
+
+                  {selectedRoute.status === "cancelled" &&
+                    selectedRoute.cancelReason && (
+                      <Box
+                        surface="surface-muted"
+                        border="default"
+                        radius="md"
+                        padding={3}
+                      >
+                        <Inline gap={2} align="center">
+                          <Icon
+                            icon={AlertTriangle}
+                            size="sm"
+                            className="text-danger"
+                          />
+                          <Text size="body-sm">
+                            Cancelada pelo entregador:{" "}
+                            <strong>{selectedRoute.cancelReason}</strong>. As
+                            paradas que estavam em aberto voltaram para a lista
+                            de pedidos.
+                          </Text>
+                        </Inline>
+                      </Box>
+                    )}
 
                   {selectedRoute.simulated && (
                     <Box
@@ -393,37 +498,73 @@ export default function RoutesPage() {
                           <Inline
                             key={stop.id}
                             justify="between"
+                            align="start"
                             gap={3}
                             className="border-border-subtle rounded-md border px-3 py-2"
                           >
-                            <Inline gap={2} align="center" className="min-w-0">
+                            <Inline gap={2} align="start" className="min-w-0">
                               <Text size="body-sm" color="muted">
                                 {stop.sequence}.
                               </Text>
-                              <Text size="body-sm" className="truncate">
-                                {order?.destination ?? stop.label}
-                              </Text>
+                              <Stack gap={0.5} className="min-w-0">
+                                <Text size="body-sm" className="truncate">
+                                  {order?.destination ?? stop.label}
+                                </Text>
+                                {/* O que o entregador registrou no aplicativo: sem isto a
+                                    tela diria "não entregue" sem dizer por quê. */}
+                                {stop.failed && (
+                                  <Text size="caption" color="danger">
+                                    Motivo:{" "}
+                                    {
+                                      OCCURRENCE_LABEL[
+                                        stop.occurrenceType ?? "other"
+                                      ]
+                                    }
+                                  </Text>
+                                )}
+                                {stop.driverNotes && (
+                                  <Text size="caption" color="muted">
+                                    Entregador: {stop.driverNotes}
+                                  </Text>
+                                )}
+                              </Stack>
                             </Inline>
                             <Inline gap={2} align="center" className="shrink-0">
-                              {order && (
+                              {stop.closedAt ? (
                                 <Text size="caption" color="muted">
-                                  {deliveryWindowLabel(order.deliveryWindow)}
+                                  {new Date(stop.closedAt).toLocaleTimeString(
+                                    "pt-BR",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    },
+                                  )}
                                 </Text>
+                              ) : (
+                                order && (
+                                  <Text size="caption" color="muted">
+                                    {deliveryWindowLabel(order.deliveryWindow)}
+                                  </Text>
+                                )
                               )}
                               <StatusBadge
                                 tone={
                                   stop.completed
                                     ? "success"
-                                    : ORDER_STATUS_META[
-                                        order?.status ?? "pending"
-                                      ].tone
+                                    : stop.failed
+                                      ? "danger"
+                                      : ORDER_STATUS_META[
+                                          order?.status ?? "pending"
+                                        ].tone
                                 }
                               >
                                 {stop.completed
                                   ? "Entregue"
-                                  : ORDER_STATUS_META[
-                                      order?.status ?? "pending"
-                                    ].label}
+                                  : stop.failed
+                                    ? "Não entregue"
+                                    : ORDER_STATUS_META[
+                                        order?.status ?? "pending"
+                                      ].label}
                               </StatusBadge>
                             </Inline>
                           </Inline>
@@ -465,11 +606,34 @@ export default function RoutesPage() {
         </DialogContent>
       </DialogRoot>
 
+      <DuplicateRouteDialog
+        route={duplicating}
+        onClose={() => setDuplicating(null)}
+        onCreated={(created) => setSelectedId(created.id)}
+      />
+
+      <ConfirmDialog
+        open={!!completing}
+        onOpenChange={(open) => !open && setCompleting(null)}
+        title={`Concluir ${completing?.name ?? "a rota"}?`}
+        description={(() => {
+          const abertas = completing
+            ? completing.stops.filter((stop) => !stop.completed && !stop.failed).length
+            : 0;
+          return abertas > 0
+            ? `${abertas} parada(s) ainda sem baixa serão registradas como entregues agora. Use só se as entregas foram feitas e o entregador não baixou pelo aplicativo.`
+            : "Todas as paradas já têm baixa. A rota é encerrada e o motorista e o veículo ficam livres.";
+        })()}
+        confirmLabel="Concluir rota"
+        loading={completeMutation.isPending}
+        onConfirm={() => completing && handleComplete(completing)}
+      />
+
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Excluir ${deleting?.name}?`}
-        description="Remove o registro de otimização inteiro, incluindo as demais rotas geradas na mesma execução. Esta ação não pode ser desfeita."
+        title={`Excluir ${deleting?.name ?? "a rota"}?`}
+        description="Apaga só esta rota. Os pedidos dela voltam para a fila, prontos para outra rota. Esta ação não pode ser desfeita."
         tone="danger"
         confirmLabel="Excluir"
         loading={deleteMutation.isPending}

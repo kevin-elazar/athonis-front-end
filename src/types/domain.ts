@@ -68,6 +68,8 @@ export type OrderStatus =
   | "planned"
   | "in_route"
   | "delivered"
+  /** Parada visitada pelo entregador e não entregue; o motivo fica na ocorrência. */
+  | "failed"
   | "delayed"
   | "cancelled";
 
@@ -99,6 +101,26 @@ export type Order = {
   city: string;
   state: string;
   zipCode: string;
+  /** Tentativas de entrega feitas ou em curso (passagens por rotas, sem as canceladas antes da visita). */
+  attempts: number;
+  /** A última tentativa que não deu certo. */
+  lastFailure: { routeId: string; occurredAt: string | null; occurrenceType: OccurrenceType | null } | null;
+};
+
+/** Uma passagem do pedido por uma rota. */
+export type OrderAttempt = {
+  /** Null quando a rota foi cancelada antes da visita (não conta como tentativa). */
+  attempt: number | null;
+  routeId: string;
+  routeStatus: string;
+  plannedDate: string | null;
+  driverName: string | null;
+  vehiclePlate: string | null;
+  status: "planned" | "in_route" | "delivered" | "failed" | "returned";
+  arrivedAt: string | null;
+  completedAt: string | null;
+  occurrenceType: OccurrenceType | null;
+  notes: string | null;
 };
 
 export type RouteStatus = "planned" | "active" | "completed" | "delayed" | "cancelled";
@@ -110,6 +132,14 @@ export type RouteStop = {
   lng: number;
   sequence: number;
   completed: boolean;
+  /** Parada visitada e não entregue. */
+  failed: boolean;
+  /** Motivo informado pelo entregador no aplicativo; null se foi entregue ou está em aberto. */
+  occurrenceType: OccurrenceType | null;
+  /** Observação escrita pelo entregador na entrega ou na ocorrência. */
+  driverNotes: string | null;
+  /** Hora em que o entregador encerrou a parada. */
+  closedAt: string | null;
 };
 
 export type Route = {
@@ -124,6 +154,8 @@ export type Route = {
   stops: RouteStop[];
   startedAt: string | null;
   region: string;
+  /** Dia da entrega (AAAA-MM-DD). */
+  plannedDate: string | null;
   totalDistanceKm: number;
   totalDurationMin: number;
   /**
@@ -132,6 +164,12 @@ export type Route = {
    * estimativas e não servem para despacho.
    */
   simulated: boolean;
+  /** Motivo informado pelo entregador ao cancelar a rota no aplicativo. */
+  cancelReason: string | null;
+  /** Paradas da rota cancelada que continuam livres e podem ir para uma rota duplicada. */
+  returnedStopCount: number;
+  /** Rota cancelada que deu origem a esta, quando ela foi duplicada. */
+  duplicatedFromRouteId: string | null;
 };
 
 /**
@@ -198,4 +236,196 @@ export type OrderImportResult = {
   tempoProcessamento: number;
   status: OrderImportStatus;
   mensagem: string;
+};
+
+// ------------------------------------------------- Aplicativo do entregador
+
+/** Situação do login do motorista no aplicativo. */
+export type DriverAccess = {
+  driverId: string;
+  hasAccess: boolean;
+  email: string | null;
+  isActive: boolean;
+  lastLogin: string | null;
+};
+
+export type OccurrenceType =
+  | "customer_absent"
+  | "address_not_found"
+  | "refused"
+  | "damaged_goods"
+  | "closed_establishment"
+  | "access_restricted"
+  | "traffic"
+  | "other";
+
+// ------------------------------------------------------ Execução em campo
+
+/**
+ * Indicadores do que aconteceu em campo, vindos de `/analytics/*`. Os campos
+ * nulos significam "sem dado para calcular" (ex.: nenhuma rota com rastro de
+ * GPS no período) — a tela mostra travessão, nunca zero.
+ */
+export type FieldOverview = {
+  period: { from: string; to: string };
+  routesTotal: number;
+  routesCompleted: number;
+  routesWithTracking: number;
+  stopsTotal: number;
+  stopsDelivered: number;
+  stopsFailed: number;
+  stopsPending: number;
+  completionRate: number | null;
+  onTimeRate: number | null;
+  avgDelayMin: number | null;
+  avgServiceMin: number | null;
+  plannedDistanceKm: number;
+  actualDistanceKm: number;
+  plannedDurationMin: number;
+  actualDurationMin: number;
+  idleTimeMin: number;
+  stopsOutOfOrder: number;
+  occurrencesTotal: number;
+};
+
+export type FieldDriverStats = {
+  driverId: string;
+  name: string;
+  routes: number;
+  stopsTotal: number;
+  stopsDelivered: number;
+  stopsFailed: number;
+  completionRate: number | null;
+  avgServiceMin: number | null;
+  avgDelayMin: number | null;
+  actualDistanceKm: number;
+  stopsOutOfOrder: number;
+};
+
+export type DayPeriod = "morning" | "afternoon" | "evening";
+
+export type FieldRegionStats = {
+  region: string;
+  period: DayPeriod;
+  stops: number;
+  stopsFailed: number;
+  avgServiceMin: number | null;
+  avgDelayMin: number | null;
+};
+
+export type FieldOccurrence = {
+  routeId: string;
+  orderId: string | null;
+  orderTitle: string | null;
+  clientName: string | null;
+  driverName: string | null;
+  occurrenceType: OccurrenceType;
+  notes: string | null;
+  occurredAt: string | null;
+};
+
+export type FieldOccurrences = {
+  total: number;
+  byType: Array<{ type: OccurrenceType; count: number; share: number | null }>;
+  recent: FieldOccurrence[];
+};
+
+export type FieldRouteSummary = {
+  routeId: string;
+  status: RouteStatus;
+  plannedDate: string | null;
+  region: string | null;
+  driverName: string | null;
+  simulated: boolean;
+  stopsTotal: number;
+  stopsDelivered: number;
+  stopsFailed: number;
+  plannedDistanceM: number | null;
+  actualDistanceM: number | null;
+  plannedDurationMin: number | null;
+  actualDurationMin: number | null;
+  stopsOutOfOrder: number | null;
+  hasTracking: boolean;
+};
+
+export type RouteComparisonStop = {
+  orderId: string;
+  title: string;
+  clientName: string | null;
+  address: string;
+  status: OrderStatus;
+  plannedSequence: number | null;
+  actualSequence: number | null;
+  plannedArrival: string | null;
+  actualArrival: string | null;
+  completedAt: string | null;
+  delayMin: number | null;
+  serviceMin: number | null;
+  occurrenceType: OccurrenceType | null;
+  notes: string | null;
+  /** Endereço da parada. */
+  lat: number | null;
+  lng: number | null;
+  /** Onde o entregador estava ao dar a baixa — pode não ser o endereço. */
+  recordedLat: number | null;
+  recordedLng: number | null;
+};
+
+export type GeoPoint = { lat: number; lng: number };
+
+/** Trecho em que o veículo ficou parado fora de uma parada de entrega. */
+export type IdleStop = GeoPoint & {
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMin: number;
+};
+
+/** Rota em andamento, com a última posição conhecida do entregador. */
+export type LiveRoute = {
+  routeId: string;
+  driverName: string | null;
+  vehicleName: string | null;
+  region: string | null;
+  startedAt: string | null;
+  stopsTotal: number;
+  stopsDelivered: number;
+  stopsFailed: number;
+  nextStop: { orderId: string; sequence: number | null; label: string; address: string } | null;
+  /** Null enquanto o aplicativo não enviou nenhum ponto de GPS desta rota. */
+  position: (GeoPoint & { speedMps: number | null; recordedAt: string | null }) | null;
+};
+
+/** Planejado × executado de uma rota, parada a parada. */
+export type RouteComparison = {
+  route: {
+    routeId: string;
+    status: RouteStatus;
+    plannedDate: string | null;
+    region: string | null;
+    simulated: boolean;
+    driverName: string | null;
+    vehicleName: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  };
+  summary: {
+    plannedDistanceM: number | null;
+    actualDistanceM: number | null;
+    plannedDurationMin: number | null;
+    actualDurationMin: number | null;
+    stopsTotal: number;
+    stopsDelivered: number;
+    stopsFailed: number;
+    stopsOutOfOrder: number;
+    idleTimeMin: number | null;
+    avgServiceMin: number | null;
+    avgDelayMin: number | null;
+    pingCount: number;
+  } | null;
+  stops: RouteComparisonStop[];
+  /** Trajeto percorrido, na ordem das leituras de GPS. */
+  path: Array<GeoPoint & { recordedAt: string | null }>;
+  idleStops: IdleStop[];
+  /** Depósito, de onde a rota planejada parte; null se a empresa não o cadastrou. */
+  depot: GeoPoint | null;
 };

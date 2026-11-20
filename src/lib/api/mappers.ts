@@ -8,9 +8,11 @@ import type {
   Customer,
   Driver,
   Order,
+  OrderAttempt,
   Route,
   RouteStop,
   Vehicle,
+  OccurrenceType,
   OrderStatus,
   RouteStatus,
 } from "@/types/domain";
@@ -30,13 +32,24 @@ const toStringId = (value: number | string | null | undefined): string =>
 const toNullableId = (value: number | string | null | undefined): string | null =>
   value === null || value === undefined || value === 0 ? null : String(value);
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * Dia AAAA-MM-DD. Uma data pura ("2026-11-22", ou a meia-noite UTC com que o
+ * banco serializa uma coluna `date`) é mantida como está. Um instante (data e
+ * hora) vira o dia no fuso de quem está vendo: antes virava o dia em UTC, e
+ * um pedido criado às 23h aparecia com a data do dia seguinte.
+ */
 const toIsoDate = (value: string | null | undefined): string => {
   if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value) || /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z$/.test(value)) {
+    return value.slice(0, 10);
+  }
   // O backend devolve "YYYY-MM-DD HH:mm:ss" (SQLite) ou ISO.
   const normalized = value.includes("T") ? value : value.replace(" ", "T");
   const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 };
 
 
@@ -332,7 +345,39 @@ export type ApiOrder = {
   delivery_number: string;
   delivery_complement?: string | null;
   created_at?: string;
+  attempts?: number;
+  last_failure?: { route_id: number; occurred_at: string | null; occurrence_type: string | null } | null;
 };
+
+export type ApiOrderAttempt = {
+  attempt: number | null;
+  route_id: number;
+  route_status: string;
+  planned_date: string | null;
+  driver_name: string | null;
+  vehicle_plate: string | null;
+  status: OrderAttempt["status"];
+  arrived_at: string | null;
+  completed_at: string | null;
+  occurrence_type: string | null;
+  notes: string | null;
+};
+
+export function mapOrderAttempt(item: ApiOrderAttempt): OrderAttempt {
+  return {
+    attempt: item.attempt,
+    routeId: String(item.route_id),
+    routeStatus: item.route_status,
+    plannedDate: item.planned_date,
+    driverName: item.driver_name,
+    vehiclePlate: item.vehicle_plate,
+    status: item.status,
+    arrivedAt: item.arrived_at,
+    completedAt: item.completed_at,
+    occurrenceType: (item.occurrence_type as OccurrenceType | null) ?? null,
+    notes: item.notes,
+  };
+}
 
 export function formatDeliveryAddress(order: ApiOrder): string {
   return [
@@ -369,6 +414,14 @@ export function mapOrder(order: ApiOrder): Order {
     city: order.delivery_city ?? "",
     state: order.delivery_state ?? "",
     zipCode: order.delivery_zipcode ?? "",
+    attempts: order.attempts ?? 0,
+    lastFailure: order.last_failure
+      ? {
+          routeId: String(order.last_failure.route_id),
+          occurredAt: order.last_failure.occurred_at,
+          occurrenceType: (order.last_failure.occurrence_type as OccurrenceType | null) ?? null,
+        }
+      : null,
   };
 }
 
@@ -407,6 +460,9 @@ export type ApiRouteOrder = {
   delivery_latitude?: number | null;
   delivery_longitude?: number | null;
   client?: { name?: string | null } | null;
+  occurrence_type?: OccurrenceType | null;
+  driver_notes?: string | null;
+  closed_at?: string | null;
 };
 
 export type ApiRoute = {
@@ -424,6 +480,9 @@ export type ApiRoute = {
   region?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  cancel_reason?: string | null;
+  returned_stop_count?: number;
+  duplicated_from_route_id?: number | null;
   orders: ApiRouteOrder[];
 };
 
@@ -450,6 +509,10 @@ export function mapRoute(route: ApiRoute): Route {
     sequence: order.stop_sequence ?? index + 1,
     // Baixa individual da parada — é o que o app do entregador marca.
     completed: order.status === "delivered",
+    failed: order.status === "failed",
+    occurrenceType: order.occurrence_type ?? null,
+    driverNotes: order.driver_notes ?? null,
+    closedAt: order.closed_at ?? null,
   }));
 
   return {
@@ -464,8 +527,12 @@ export function mapRoute(route: ApiRoute): Route {
     stops,
     startedAt: route.started_at ?? null,
     region: route.region || orders[0]?.delivery_city || "—",
+    plannedDate: route.planned_date ? String(route.planned_date).slice(0, 10) : null,
     totalDistanceKm: (route.total_distance_m ?? 0) / 1000,
     totalDurationMin: route.total_duration_min ?? 0,
     simulated: route.simulated ?? false,
+    cancelReason: route.cancel_reason ?? null,
+    returnedStopCount: route.returned_stop_count ?? 0,
+    duplicatedFromRouteId: toNullableId(route.duplicated_from_route_id),
   };
 }

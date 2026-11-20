@@ -1,0 +1,143 @@
+# Integração contínua do painel web (Next.js).
+#
+# Em todo push e pull request: lint, typecheck, testes com cobertura (Vitest,
+# limite mínimo no vitest.config.ts), build de produção e SonarCloud. Em push
+# nas branches principais publica a imagem Docker no GHCR, já apontando para a
+# API do ambiente certo (staging ou produção).
+name: CI
+
+on:
+  push:
+    branches: [master, desenvMobile]
+    # Tag v* (release): gera a imagem de produção com a tag da versão.
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Só PR cancela a execução anterior: num push, cancelar no meio poderia
+# interromper a publicação da imagem ou o deploy.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    name: Lint, typecheck, testes e build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # Os tipos globais do App Router (LayoutProps, PageProps...) são gerados pelo Next.
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - name: Testes com cobertura
+        run: npm run test:cov
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.example.invalid
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  sonarcloud:
+    name: SonarCloud
+    needs: qualidade
+    runs-on: ubuntu-latest
+    # Analisa o PR (comparado com a branch de destino) e a branch principal.
+    # O push na branch de trabalho fica de fora: o SonarCloud a compararia com
+    # a branch padrão do repositório e o resultado sobrescreveria o check do PR.
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name != 'pull_request' && github.ref == 'refs/heads/master') }}
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+      - name: Análise
+        if: ${{ env.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v6
+      - name: Aviso de configuração
+        if: ${{ env.SONAR_TOKEN == '' }}
+        run: echo "::warning::SONAR_TOKEN não configurado; análise do SonarCloud pulada."
+
+  imagem:
+    name: Imagem Docker (GHCR)
+    needs: qualidade
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      # Produção nunca cai no endereço de staging: sem a variável do
+      # ambiente escolhido, a imagem não é gerada.
+      - id: ambiente
+        env:
+          PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/master" ] || [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            api_url="$PRODUCTION_API_URL"; ambiente=production; var=PRODUCTION_API_URL
+          else
+            api_url="$STAGING_API_URL"; ambiente=staging; var=STAGING_API_URL
+          fi
+          if [ -z "$api_url" ]; then
+            echo "::error::Variável $var não configurada; a imagem de $ambiente não pode ser gerada."
+            exit 1
+          fi
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+          echo "ambiente=$ambiente" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/athonis-web
+          tags: |
+            type=sha,format=long,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
+            type=ref,event=tag
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/desenvMobile' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/master' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # O endereço da API entra no bundle do Next no build.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ steps.ambiente.outputs.api_url }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.SENTRY_DSN_WEB }}
+            NEXT_PUBLIC_SENTRY_ENVIRONMENT=${{ steps.ambiente.outputs.ambiente }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy em staging
+    needs: imagem
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/desenvMobile' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ambiente: staging
+      imagem: sha-${{ github.sha }}

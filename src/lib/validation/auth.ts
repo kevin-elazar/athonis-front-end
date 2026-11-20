@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt";
 
 export const loginSchema = z.object({
   email: z.email("Informe um email válido"),

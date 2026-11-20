@@ -8,13 +8,14 @@
  */
 
 import { createAuthenticatedApiClient } from "./client";
-import { toApiErrorMessage } from "./errors";
+import { toActionFailure, type ActionResult } from "./errors";
 import { getSessionToken } from "@/lib/auth/session";
 import {
   mapCompany,
   mapCustomer,
   mapDriver,
   mapOrder,
+  mapOrderAttempt,
   mapRoute,
   mapVehicle,
   toApiClient,
@@ -26,6 +27,7 @@ import {
   type ApiCompany,
   type ApiDriver,
   type ApiOrder,
+  type ApiOrderAttempt,
   type ApiRoute,
   type ApiVehicle,
 } from "./mappers";
@@ -33,7 +35,16 @@ import type {
   Company,
   Customer,
   Driver,
+  DriverAccess,
+  FieldDriverStats,
+  FieldOccurrences,
+  FieldOverview,
+  FieldRegionStats,
+  FieldRouteSummary,
+  LiveRoute,
   Order,
+  OrderAttempt,
+  RouteComparison,
   OrderImportResult,
   Route,
   Vehicle,
@@ -52,17 +63,22 @@ const PAGE_SIZE = 200;
 
 type Paginated<T> = { items?: T[]; meta?: { total: number } };
 
-async function request<T>(fn: (api: Awaited<ReturnType<typeof createAuthenticatedApiClient>>) => Promise<T>): Promise<T> {
+/**
+ * Erro esperado (validação, 404, API fora do ar) volta como valor, não como
+ * exceção: em produção o React troca a mensagem de um erro lançado por um
+ * digest genérico, e o usuário perderia o texto do backend. O wrapper em
+ * `resources.ts` desembrulha o resultado e lança `ApiError` no cliente.
+ */
+async function request<T>(
+  fn: (api: Awaited<ReturnType<typeof createAuthenticatedApiClient>>) => Promise<T>,
+): Promise<ActionResult<T>> {
   const api = await createAuthenticatedApiClient();
   try {
-    return await fn(api);
+    return { ok: true, data: await fn(api) };
   } catch (error) {
-    // A mensagem real do backend (inclusive erros por campo) é preservada;
-    // Error é o que atravessa a fronteira de Server Action sem perder texto.
-    throw new Error(toApiErrorMessage(error));
+    return toActionFailure(error);
   }
 }
-
 
 // ----------------------------------------------------------------- Empresa
 
@@ -72,14 +88,14 @@ async function request<T>(fn: (api: Awaited<ReturnType<typeof createAuthenticate
  * Não existe ação de criar empresa: um tenant novo é criado no banco
  * (scripts/create-company.js), por quem administra o sistema.
  */
-export async function getCompany(): Promise<Company> {
+export async function getCompany(): Promise<ActionResult<Company>> {
   return request(async (api) => {
     const { data } = await api.get<ApiCompany>("/company");
     return mapCompany(data);
   });
 }
 
-export async function updateCompany(input: CompanyFormInput): Promise<Company> {
+export async function updateCompany(input: CompanyFormInput): Promise<ActionResult<Company>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiCompany>("/company", toApiCompany(input));
     return mapCompany(data);
@@ -88,7 +104,7 @@ export async function updateCompany(input: CompanyFormInput): Promise<Company> {
 
 // ------------------------------------------------------------- Clientes
 
-export async function listCustomers(): Promise<Customer[]> {
+export async function listCustomers(): Promise<ActionResult<Customer[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiClient>>("/clients", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "name", order: "ASC" },
@@ -97,27 +113,29 @@ export async function listCustomers(): Promise<Customer[]> {
   });
 }
 
-export async function createCustomer(input: CustomerFormInput): Promise<Customer> {
+export async function createCustomer(input: CustomerFormInput): Promise<ActionResult<Customer>> {
   return request(async (api) => {
     const { data } = await api.post<ApiClient>("/clients", toApiClient(input));
     return mapCustomer(data);
   });
 }
 
-export async function updateCustomer(id: string, input: CustomerFormInput): Promise<Customer> {
+export async function updateCustomer(id: string, input: CustomerFormInput): Promise<ActionResult<Customer>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiClient>(`/clients/${id}`, toApiClient(input));
     return mapCustomer(data);
   });
 }
 
-export async function deleteCustomer(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/clients/${id}`));
+export async function deleteCustomer(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/clients/${id}`);
+  });
 }
 
 // ------------------------------------------------------------ Motoristas
 
-export async function listDrivers(): Promise<Driver[]> {
+export async function listDrivers(): Promise<ActionResult<Driver[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiDriver>>("/drivers", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "name", order: "ASC" },
@@ -126,27 +144,29 @@ export async function listDrivers(): Promise<Driver[]> {
   });
 }
 
-export async function createDriver(input: DriverFormInput): Promise<Driver> {
+export async function createDriver(input: DriverFormInput): Promise<ActionResult<Driver>> {
   return request(async (api) => {
     const { data } = await api.post<ApiDriver>("/drivers", toApiDriver(input));
     return mapDriver(data);
   });
 }
 
-export async function updateDriver(id: string, input: DriverFormInput): Promise<Driver> {
+export async function updateDriver(id: string, input: DriverFormInput): Promise<ActionResult<Driver>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiDriver>(`/drivers/${id}`, toApiDriver(input));
     return mapDriver(data);
   });
 }
 
-export async function deleteDriver(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/drivers/${id}`));
+export async function deleteDriver(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/drivers/${id}`);
+  });
 }
 
 // -------------------------------------------------------------- Veículos
 
-export async function listVehicles(): Promise<Vehicle[]> {
+export async function listVehicles(): Promise<ActionResult<Vehicle[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiVehicle>>("/vehicles", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "name", order: "ASC" },
@@ -155,27 +175,29 @@ export async function listVehicles(): Promise<Vehicle[]> {
   });
 }
 
-export async function createVehicle(input: VehicleFormInput): Promise<Vehicle> {
+export async function createVehicle(input: VehicleFormInput): Promise<ActionResult<Vehicle>> {
   return request(async (api) => {
     const { data } = await api.post<ApiVehicle>("/vehicles", toApiVehicle(input));
     return mapVehicle(data);
   });
 }
 
-export async function updateVehicle(id: string, input: VehicleFormInput): Promise<Vehicle> {
+export async function updateVehicle(id: string, input: VehicleFormInput): Promise<ActionResult<Vehicle>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiVehicle>(`/vehicles/${id}`, toApiVehicle(input));
     return mapVehicle(data);
   });
 }
 
-export async function deleteVehicle(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/vehicles/${id}`));
+export async function deleteVehicle(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/vehicles/${id}`);
+  });
 }
 
 // --------------------------------------------------------------- Pedidos
 
-export async function listOrders(): Promise<Order[]> {
+export async function listOrders(): Promise<ActionResult<Order[]>> {
   return request(async (api) => {
     const { data } = await api.get<Paginated<ApiOrder>>("/orders", {
       params: { page: 1, limit: PAGE_SIZE, sort_by: "order_id", order: "DESC" },
@@ -184,22 +206,32 @@ export async function listOrders(): Promise<Order[]> {
   });
 }
 
-export async function createOrder(input: OrderFormInput): Promise<Order> {
+/** Tentativas de entrega do pedido: cada passagem por uma rota e o resultado. */
+export async function listOrderAttempts(orderId: string): Promise<ActionResult<OrderAttempt[]>> {
+  return request(async (api) => {
+    const { data } = await api.get<ApiOrderAttempt[]>(`/orders/${orderId}/attempts`);
+    return (data ?? []).map(mapOrderAttempt);
+  });
+}
+
+export async function createOrder(input: OrderFormInput): Promise<ActionResult<Order>> {
   return request(async (api) => {
     const { data } = await api.post<ApiOrder>("/orders", toApiOrder(input));
     return mapOrder(data);
   });
 }
 
-export async function updateOrder(id: string, input: OrderFormInput): Promise<Order> {
+export async function updateOrder(id: string, input: OrderFormInput): Promise<ActionResult<Order>> {
   return request(async (api) => {
     const { data } = await api.patch<ApiOrder>(`/orders/${id}`, toApiOrder(input));
     return mapOrder(data);
   });
 }
 
-export async function deleteOrder(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/orders/${id}`));
+export async function deleteOrder(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/orders/${id}`);
+  });
 }
 
 /**
@@ -211,10 +243,10 @@ export async function deleteOrder(id: string): Promise<void> {
  * (o backend recebia a requisição sem o arquivo), enquanto `fetch` com
  * `FormData` funciona normalmente.
  */
-export async function importOrders(formData: FormData): Promise<OrderImportResult> {
+export async function importOrders(formData: FormData): Promise<ActionResult<OrderImportResult>> {
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    throw new Error("Nenhum arquivo foi enviado");
+    return { ok: false, message: "Nenhum arquivo foi enviado" };
   }
 
   const token = await getSessionToken();
@@ -223,36 +255,44 @@ export async function importOrders(formData: FormData): Promise<OrderImportResul
   const uploadForm = new FormData();
   uploadForm.append("file", file, file.name);
 
-  const response = await fetch(`${apiUrl}/order-imports/upload`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: uploadForm,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}/order-imports/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: uploadForm,
+    });
+  } catch (error) {
+    // Sem `response`, a mensagem cai em "Não foi possível conectar ao servidor".
+    return toActionFailure(error);
+  }
 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(toApiErrorMessage({ response: { status: response.status, data } }));
+    return toActionFailure({ response: { status: response.status, data } });
   }
 
-  return data as OrderImportResult;
+  return { ok: true, data: data as OrderImportResult };
 }
 
 // ----------------------------------------------------------------- Rotas
 
-export async function listRoutes(): Promise<Route[]> {
+export async function listRoutes(): Promise<ActionResult<Route[]>> {
   return request(async (api) => {
     const { data } = await api.get<ApiRoute[]>("/routes");
     return (Array.isArray(data) ? data : []).map(mapRoute);
   });
 }
 
-export async function deleteRoute(id: string): Promise<void> {
-  await request(async (api) => api.delete(`/routes/${id}`));
+export async function deleteRoute(id: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/routes/${id}`);
+  });
 }
 
 /** Rota sai para a rua: pedidos, motorista e veículo entram em trânsito. */
-export async function startRoute(id: string): Promise<Route> {
+export async function startRoute(id: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/start`);
     return mapRoute(data);
@@ -260,15 +300,34 @@ export async function startRoute(id: string): Promise<Route> {
 }
 
 /** Encerra a rota, dando como entregues as paradas ainda em aberto. */
-export async function completeRoute(id: string): Promise<Route> {
+export async function completeRoute(id: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/complete`);
     return mapRoute(data);
   });
 }
 
+/**
+ * Cria uma rota planejada com as paradas que uma rota cancelada ainda devia,
+ * na mesma ordem. Sem dia, motorista ou veículo, o backend usa hoje e os da
+ * rota original.
+ */
+export async function duplicateRoute(
+  id: string,
+  input: { plannedDate?: string; driverId?: string; vehicleId?: string },
+): Promise<ActionResult<Route>> {
+  return request(async (api) => {
+    const { data } = await api.post<ApiRoute>(`/routes/${id}/duplicate`, {
+      ...(input.plannedDate ? { planned_date: input.plannedDate } : {}),
+      ...(input.driverId ? { driver_id: Number(input.driverId) } : {}),
+      ...(input.vehicleId ? { vehicle_id: Number(input.vehicleId) } : {}),
+    });
+    return mapRoute(data);
+  });
+}
+
 /** Devolve os pedidos para a fila, mantendo o registro da rota. */
-export async function cancelRoute(id: string): Promise<Route> {
+export async function cancelRoute(id: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${id}/cancel`);
     return mapRoute(data);
@@ -279,7 +338,7 @@ export async function cancelRoute(id: string): Promise<Route> {
  * Baixa de uma parada. É o que o aplicativo do entregador vai chamar a cada
  * entrega; quando é a última, a rota se encerra sozinha.
  */
-export async function deliverRouteStop(routeId: string, orderId: string): Promise<Route> {
+export async function deliverRouteStop(routeId: string, orderId: string): Promise<ActionResult<Route>> {
   return request(async (api) => {
     const { data } = await api.post<ApiRoute>(`/routes/${routeId}/orders/${orderId}/deliver`);
     return mapRoute(data);
@@ -287,10 +346,12 @@ export async function deliverRouteStop(routeId: string, orderId: string): Promis
 }
 
 /** Verifica quais pedidos podem ser roteirizados, com o motivo de cada exclusão. */
-export async function validateOrdersForRoute(orderIds: string[]): Promise<{
-  validOrders: number[];
-  unassigned: Array<{ orderId: number; reason: string }>;
-}> {
+export async function validateOrdersForRoute(orderIds: string[]): Promise<
+  ActionResult<{
+    validOrders: number[];
+    unassigned: Array<{ orderId: number; reason: string }>;
+  }>
+> {
   return request(async (api) => {
     const { data } = await api.post("/optimization-routes/validate-orders", {
       orderIds: orderIds.map(Number),
@@ -303,16 +364,47 @@ export async function validateOrdersForRoute(orderIds: string[]): Promise<{
 }
 
 /** Gera as rotas otimizadas para os pedidos selecionados. */
-export async function optimizeRoutes(orderIds: string[]): Promise<{
-  totalRoutes: number;
-  simulated: boolean;
-  message: string;
-  unassignedOrders: Array<{ orderId: number; reason: string }>;
-}> {
+/** Tempo máximo da geração de rotas (geocodificação + otimização de cada grupo). */
+const OPTIMIZE_TIMEOUT_MS = 90_000;
+
+export async function optimizeRoutes(
+  orderIds: string[],
+  plannedDate?: string,
+): Promise<
+  ActionResult<{
+    totalRoutes: number;
+    simulated: boolean;
+    message: string;
+    unassignedOrders: Array<{ orderId: number; reason: string }>;
+  }>
+> {
   return request(async (api) => {
-    const { data } = await api.post("/optimization-routes/optimize", {
-      orderIds: orderIds.map(Number),
-    });
+    const { data } = await api
+      .post(
+        "/optimization-routes/optimize",
+        { orderIds: orderIds.map(Number), ...(plannedDate ? { plannedDate } : {}) },
+        // Uma otimização no Google por motorista e dia, uma depois da outra:
+        // com várias rotas passa fácil dos 10 s padrão do cliente.
+        { timeout: OPTIMIZE_TIMEOUT_MS },
+      )
+      .catch((error: unknown) => {
+        // Quando nenhum pedido é roteirizável, a API manda o motivo de cada
+        // um; sem isso a tela mostrava só "nenhum pedido válido".
+        const payload = (
+          error as {
+            response?: {
+              data?: { message?: unknown; unassignedOrders?: Array<{ orderId: number; reason: string }> };
+            };
+          }
+        ).response?.data;
+        if (payload?.unassignedOrders?.length) {
+          const motivos = payload.unassignedOrders
+            .map((item) => `pedido ${item.orderId}: ${item.reason}`)
+            .join("; ");
+          payload.message = `${String(payload.message ?? "Nenhum pedido pôde ser roteirizado")} (${motivos})`;
+        }
+        throw error;
+      });
     return {
       totalRoutes: data?.totalRoutes ?? 0,
       simulated: data?.simulated ?? false,
@@ -321,3 +413,262 @@ export async function optimizeRoutes(orderIds: string[]): Promise<{
     };
   });
 }
+
+// ------------------------------------------------ Acesso ao aplicativo
+
+type ApiDriverAccess = {
+  driver_id: number;
+  has_access: boolean;
+  email: string | null;
+  is_active: boolean;
+  last_login: string | null;
+};
+
+function mapDriverAccess(data: ApiDriverAccess): DriverAccess {
+  return {
+    driverId: String(data.driver_id),
+    hasAccess: data.has_access,
+    email: data.email,
+    isActive: data.is_active,
+    lastLogin: data.last_login,
+  };
+}
+
+export async function getDriverAccess(driverId: string): Promise<ActionResult<DriverAccess>> {
+  return request(async (api) => {
+    const { data } = await api.get<ApiDriverAccess>(`/drivers/${driverId}/access`);
+    return mapDriverAccess(data);
+  });
+}
+
+/** Cria o login do motorista ou, se já existir, troca e-mail e senha. */
+export async function grantDriverAccess(
+  driverId: string,
+  input: { email: string; password: string },
+): Promise<ActionResult<DriverAccess>> {
+  return request(async (api) => {
+    const { data } = await api.put<ApiDriverAccess>(`/drivers/${driverId}/access`, input);
+    return mapDriverAccess(data);
+  });
+}
+
+export async function revokeDriverAccess(driverId: string): Promise<ActionResult<void>> {
+  return request(async (api) => {
+    await api.delete(`/drivers/${driverId}/access`);
+  });
+}
+
+// ---------------------------------------------------- Execução em campo
+
+/** Período em dias (AAAA-MM-DD). Sem valores, o backend usa os últimos 30 dias. */
+export type AnalyticsRange = { from?: string; to?: string };
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- respostas de leitura,
+   convertidas campo a campo logo abaixo */
+
+export async function getFieldOverview(range: AnalyticsRange): Promise<ActionResult<FieldOverview>> {
+  return request(async (api) => {
+    const { data } = await api.get<any>("/analytics/overview", { params: range });
+    return {
+      period: data.period,
+      routesTotal: data.routes_total,
+      routesCompleted: data.routes_completed,
+      routesWithTracking: data.routes_with_tracking,
+      stopsTotal: data.stops_total,
+      stopsDelivered: data.stops_delivered,
+      stopsFailed: data.stops_failed,
+      stopsPending: data.stops_pending,
+      completionRate: data.completion_rate,
+      onTimeRate: data.on_time_rate,
+      avgDelayMin: data.avg_delay_min,
+      avgServiceMin: data.avg_service_min,
+      plannedDistanceKm: data.planned_distance_km,
+      actualDistanceKm: data.actual_distance_km,
+      plannedDurationMin: data.planned_duration_min,
+      actualDurationMin: data.actual_duration_min,
+      idleTimeMin: data.idle_time_min,
+      stopsOutOfOrder: data.stops_out_of_order,
+      occurrencesTotal: data.occurrences_total,
+    };
+  });
+}
+
+export async function getFieldDrivers(range: AnalyticsRange): Promise<ActionResult<FieldDriverStats[]>> {
+  return request(async (api) => {
+    const { data } = await api.get<any[]>("/analytics/drivers", { params: range });
+    return (data ?? []).map((item) => ({
+      driverId: String(item.driver_id),
+      name: item.name,
+      routes: item.routes,
+      stopsTotal: item.stops_total,
+      stopsDelivered: item.stops_delivered,
+      stopsFailed: item.stops_failed,
+      completionRate: item.completion_rate,
+      avgServiceMin: item.avg_service_min,
+      avgDelayMin: item.avg_delay_min,
+      actualDistanceKm: item.actual_distance_km,
+      stopsOutOfOrder: item.stops_out_of_order,
+    }));
+  });
+}
+
+export async function getFieldRegions(range: AnalyticsRange): Promise<ActionResult<FieldRegionStats[]>> {
+  return request(async (api) => {
+    const { data } = await api.get<any[]>("/analytics/regions", { params: range });
+    return (data ?? []).map((item) => ({
+      region: item.region,
+      period: item.period,
+      stops: item.stops,
+      stopsFailed: item.stops_failed,
+      avgServiceMin: item.avg_service_min,
+      avgDelayMin: item.avg_delay_min,
+    }));
+  });
+}
+
+export async function getFieldOccurrences(range: AnalyticsRange): Promise<ActionResult<FieldOccurrences>> {
+  return request(async (api) => {
+    const { data } = await api.get<any>("/analytics/occurrences", { params: range });
+    return {
+      total: data.total,
+      byType: data.by_type,
+      recent: (data.recent ?? []).map((item: any) => ({
+        routeId: String(item.route_id),
+        orderId: item.order_id != null ? String(item.order_id) : null,
+        orderTitle: item.order_title,
+        clientName: item.client_name,
+        driverName: item.driver_name,
+        occurrenceType: item.occurrence_type,
+        notes: item.notes,
+        occurredAt: item.occurred_at,
+      })),
+    };
+  });
+}
+
+export async function getFieldRoutes(range: AnalyticsRange): Promise<ActionResult<FieldRouteSummary[]>> {
+  return request(async (api) => {
+    const { data } = await api.get<any[]>("/analytics/routes", { params: range });
+    return (data ?? []).map((item) => ({
+      routeId: String(item.route_id),
+      status: item.status,
+      plannedDate: item.planned_date,
+      region: item.region,
+      driverName: item.driver_name,
+      simulated: item.simulated,
+      stopsTotal: item.stops_total,
+      stopsDelivered: item.stops_delivered,
+      stopsFailed: item.stops_failed,
+      plannedDistanceM: item.planned_distance_m,
+      actualDistanceM: item.actual_distance_m,
+      plannedDurationMin: item.planned_duration_min,
+      actualDurationMin: item.actual_duration_min,
+      stopsOutOfOrder: item.stops_out_of_order,
+      hasTracking: item.has_tracking,
+    }));
+  });
+}
+
+export async function getRouteComparison(routeId: string): Promise<ActionResult<RouteComparison>> {
+  return request(async (api) => {
+    const { data } = await api.get<any>(`/analytics/routes/${routeId}/comparison`);
+    const summary = data.summary;
+    return {
+      route: {
+        routeId: String(data.route.route_id),
+        status: data.route.status,
+        plannedDate: data.route.planned_date,
+        region: data.route.region,
+        simulated: data.route.simulated,
+        driverName: data.route.driver_name,
+        vehicleName: data.route.vehicle_name,
+        startedAt: data.route.started_at,
+        finishedAt: data.route.finished_at,
+      },
+      summary: summary
+        ? {
+            plannedDistanceM: summary.planned_distance_m,
+            actualDistanceM: summary.actual_distance_m,
+            plannedDurationMin: summary.planned_duration_min,
+            actualDurationMin: summary.actual_duration_min,
+            stopsTotal: summary.stops_total,
+            stopsDelivered: summary.stops_delivered,
+            stopsFailed: summary.stops_failed,
+            stopsOutOfOrder: summary.stops_out_of_order,
+            idleTimeMin: summary.idle_time_min,
+            avgServiceMin: summary.avg_service_min,
+            avgDelayMin: summary.avg_delay_min,
+            pingCount: summary.ping_count,
+          }
+        : null,
+      stops: (data.stops ?? []).map((item: any) => ({
+        orderId: String(item.order_id),
+        title: item.title,
+        clientName: item.client_name,
+        address: item.address,
+        status: item.status,
+        plannedSequence: item.planned_sequence,
+        actualSequence: item.actual_sequence,
+        plannedArrival: item.planned_arrival,
+        actualArrival: item.actual_arrival,
+        completedAt: item.completed_at,
+        delayMin: item.delay_min,
+        serviceMin: item.service_min,
+        occurrenceType: item.occurrence_type,
+        notes: item.notes,
+        lat: item.latitude,
+        lng: item.longitude,
+        recordedLat: item.recorded_latitude,
+        recordedLng: item.recorded_longitude,
+      })),
+      path: (data.path ?? []).map((point: any) => ({
+        lat: point.latitude,
+        lng: point.longitude,
+        recordedAt: point.recorded_at,
+      })),
+      idleStops: (data.idle_stops ?? []).map((stop: any) => ({
+        lat: stop.latitude,
+        lng: stop.longitude,
+        startedAt: stop.started_at,
+        endedAt: stop.ended_at,
+        durationMin: stop.duration_min,
+      })),
+      depot: data.depot ? { lat: data.depot.latitude, lng: data.depot.longitude } : null,
+    };
+  });
+}
+
+/** Rotas em andamento agora, com a última posição conhecida de cada entregador. */
+export async function getLiveRoutes(): Promise<ActionResult<LiveRoute[]>> {
+  return request(async (api) => {
+    const { data } = await api.get<any[]>("/analytics/live");
+    return (data ?? []).map((item) => ({
+      routeId: String(item.route_id),
+      driverName: item.driver_name,
+      vehicleName: item.vehicle_name,
+      region: item.region,
+      startedAt: item.started_at,
+      stopsTotal: item.stops_total,
+      stopsDelivered: item.stops_delivered,
+      stopsFailed: item.stops_failed,
+      nextStop: item.next_stop
+        ? {
+            orderId: String(item.next_stop.order_id),
+            sequence: item.next_stop.sequence,
+            label: item.next_stop.label,
+            address: item.next_stop.address,
+          }
+        : null,
+      position: item.position
+        ? {
+            lat: item.position.latitude,
+            lng: item.position.longitude,
+            speedMps: item.position.speed_mps,
+            recordedAt: item.position.recorded_at,
+          }
+        : null,
+    }));
+  });
+}
+
+/* eslint-enable @typescript-eslint/no-explicit-any */

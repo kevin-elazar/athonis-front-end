@@ -1,15 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Route as RouteIcon } from "lucide-react";
+import { AlertTriangle, CalendarDays, Route as RouteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { Box, Icon, Inline, Stack, Text } from "@/components/ui/primitives";
-import { ORDER_STATUS_META } from "@/constants/domain";
+import { OCCURRENCE_LABEL, ORDER_STATUS_META } from "@/constants/domain";
 import type { Order } from "@/types/domain";
+import { formatDateString } from "@/lib/utils/date";
 
 export type UnassignedOrder = { orderId: number; reason: string };
 
@@ -17,7 +19,8 @@ export type GenerateRouteDialogProps = {
   orders: Order[];
   loading?: boolean;
   unassigned?: UnassignedOrder[];
-  onGenerate: (orderIds: string[]) => Promise<void> | void;
+  /** `plannedDate` vazio: cada pedido fica no seu dia (uma rota por dia). */
+  onGenerate: (orderIds: string[], plannedDate?: string) => Promise<void> | void;
   onCancel: () => void;
 };
 
@@ -27,13 +30,39 @@ export type GenerateRouteDialogProps = {
  * uma otimização que já se sabe que vai excluir o pedido.
  */
 function blockingReason(order: Order): string | null {
+  // Um pedido pertence a uma rota só (order.route_id): roteirizar de novo
+  // criaria duas rotas disputando a mesma entrega. Para mudar, cancele ou
+  // exclua a rota atual e o pedido volta para a fila.
+  // A exceção é o não entregue: a tentativa anterior fica guardada na rota
+  // dela, e ele pode ir para uma rota nova (nova tentativa).
+  if (order.status === "delivered") return "Já entregue";
+  if (order.status === "cancelled") return "Cancelado";
+  if (order.routeId && order.status !== "failed") return `Já está na Rota #${order.routeId}`;
+  if (order.status === "in_route") return "Em rota";
   if (!order.driverId && !order.vehicleId) return "Sem motorista e sem veículo";
   if (!order.vehicleId) return "Sem veículo";
   if (!order.driverId) return "Sem motorista";
   if (!order.street || !order.city || !order.state) return "Endereço incompleto";
-  if (order.status === "delivered") return "Já entregue";
-  if (order.status === "cancelled") return "Cancelado";
   return null;
+}
+
+/** "Nova tentativa (2ª) · última: Cliente ausente em 18/11" para pedido não entregue. */
+function retryLabel(order: Order): string | null {
+  if (order.status !== "failed") return null;
+  const proxima = Math.max(order.attempts, 1) + 1;
+  const falha = order.lastFailure;
+  const motivo = falha?.occurrenceType ? OCCURRENCE_LABEL[falha.occurrenceType] : null;
+  const quando = falha?.occurredAt
+    ? new Date(falha.occurredAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
+    : null;
+  const ultima = [motivo, quando ? `em ${quando}` : null].filter(Boolean).join(" ");
+  return `Nova tentativa (${proxima}ª)${ultima ? ` · última: ${ultima}` : ""}`;
+}
+
+/** "20/11" a partir de "2026-11-20". */
+function shortDay(day: string): string {
+  const [, month, date] = day.split("-");
+  return month && date ? `${date}/${month}` : day;
 }
 
 export function GenerateRouteDialog({
@@ -44,12 +73,28 @@ export function GenerateRouteDialog({
   onCancel,
 }: GenerateRouteDialogProps) {
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [marked, setMarked] = useState<Set<string>>(new Set());
+  const [plannedDate, setPlannedDate] = useState("");
+  const today = formatDateString(new Date());
+
+  // Só vale a marcação de pedido que ainda pode ser roteirizado. Depois de
+  // gerar, os pedidos que entraram na rota ficam bloqueados ("Já está na
+  // Rota #N") e saem da seleção sozinhos, em vez de continuarem contados.
+  const roteirizaveis = useMemo(
+    () => new Set(orders.filter((order) => !blockingReason(order)).map((order) => order.id)),
+    [orders],
+  );
+  const selected = useMemo(
+    () => new Set([...marked].filter((id) => roteirizaveis.has(id))),
+    [marked, roteirizaveis],
+  );
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
     return orders
       .map((order) => ({ order, blocked: blockingReason(order) }))
+      // Os disponíveis primeiro; os bloqueados ficam no fim, com o motivo.
+      .sort((a, b) => Number(!!a.blocked) - Number(!!b.blocked))
       .filter(({ order }) =>
         query
           ? order.title.toLowerCase().includes(query) ||
@@ -59,14 +104,24 @@ export function GenerateRouteDialog({
       );
   }, [orders, search]);
 
+  // Dias de entrega dos pedidos marcados: sem um dia escolhido, sai uma rota
+  // por dia para cada motorista.
+  const selectedDays = useMemo(() => {
+    const dias = new Set<string>();
+    for (const order of orders) {
+      if (selected.has(order.id)) dias.add(order.date || today);
+    }
+    return [...dias].sort((a, b) => a.localeCompare(b));
+  }, [orders, selected, today]);
+
   const selectableIds = useMemo(
     () => rows.filter((row) => !row.blocked).map((row) => row.order.id),
     [rows],
   );
 
   function toggle(id: string) {
-    setSelected((current) => {
-      const next = new Set(current);
+    setMarked(() => {
+      const next = new Set(selected);
       if (next.has(id)) {
         next.delete(id);
       } else {
@@ -77,9 +132,7 @@ export function GenerateRouteDialog({
   }
 
   function toggleAll() {
-    setSelected((current) =>
-      current.size === selectableIds.length ? new Set() : new Set(selectableIds),
-    );
+    setMarked(selected.size === selectableIds.length ? new Set() : new Set(selectableIds));
   }
 
   return (
@@ -87,9 +140,45 @@ export function GenerateRouteDialog({
       <DialogBody>
         <Stack gap={4}>
           <Text size="body-sm" color="muted">
-            Selecione os pedidos a roteirizar. Eles são agrupados por veículo e motorista —
-            cada dupla gera uma rota.
+            Selecione os pedidos a roteirizar. Eles são agrupados por veículo, motorista e dia de
+            entrega: cada grupo gera uma rota.
           </Text>
+
+          <Stack gap={1}>
+            <Input
+              label="Dia da entrega"
+              type="date"
+              min={today}
+              value={plannedDate}
+              onChange={(event) => setPlannedDate(event.target.value)}
+              disabled={loading}
+            />
+            <Inline justify="between" align="center" gap={2}>
+              <Text size="caption" color="muted">
+                {plannedDate
+                  ? "Todos os pedidos vão para este dia, e a data de entrega deles é atualizada."
+                  : "Em branco: cada pedido fica no dia de entrega dele."}
+              </Text>
+              {plannedDate && (
+                <Button size="sm" variant="tertiary" onClick={() => setPlannedDate("")}>
+                  Usar o dia de cada pedido
+                </Button>
+              )}
+            </Inline>
+          </Stack>
+
+          {!plannedDate && selectedDays.length > 1 && (
+            <Box surface="surface-muted" border="default" radius="md" padding={3}>
+              <Inline gap={2} align="start">
+                <Icon icon={CalendarDays} size="sm" className="text-info mt-0.5" />
+                <Text size="body-sm" data-testid="days-notice">
+                  Os pedidos são de {selectedDays.length} dias diferentes (
+                  {selectedDays.map(shortDay).join(", ")}): será gerada uma rota por dia para cada
+                  motorista. Para juntar tudo numa rota só, escolha o dia acima.
+                </Text>
+              </Inline>
+            </Box>
+          )}
 
           <SearchInput
             value={search}
@@ -161,6 +250,11 @@ export function GenerateRouteDialog({
                           Não roteirizável: {blocked}
                         </Text>
                       )}
+                      {!blocked && retryLabel(order) && (
+                        <Text size="caption" className="text-info" data-testid={`retry-${order.id}`}>
+                          {retryLabel(order)}
+                        </Text>
+                      )}
                     </Stack>
                   </Inline>
                   <StatusBadge tone={ORDER_STATUS_META[order.status].tone}>
@@ -181,9 +275,10 @@ export function GenerateRouteDialog({
           variant="primary"
           loading={loading}
           disabled={selected.size === 0}
-          onClick={() => onGenerate(Array.from(selected))}
+          onClick={() => onGenerate(Array.from(selected), plannedDate || undefined)}
         >
-          <Icon icon={RouteIcon} size="sm" /> Gerar rota
+          <Icon icon={RouteIcon} size="sm" />{" "}
+          {!plannedDate && selectedDays.length > 1 ? "Gerar rotas" : "Gerar rota"}
         </Button>
       </DialogFooter>
     </>

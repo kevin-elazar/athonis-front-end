@@ -5,6 +5,12 @@ import { routesApi } from "@/lib/api/resources";
 
 const QUERY_KEY = ["routes"] as const;
 
+/**
+ * Telas da execução em campo que leem a situação das rotas: acompanhamento ao
+ * vivo, indicadores do período e comparação planejado × executado.
+ */
+const FIELD_KEYS = [["live-routes"], ["field-analytics"], ["route-comparison"]] as const;
+
 export function useRoutes(search?: string) {
   const query = search?.trim().toLowerCase();
   return useQuery({
@@ -29,7 +35,8 @@ export function useRoutes(search?: string) {
 export function useOptimizeRoutes() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (orderIds: string[]) => routesApi.optimize(orderIds),
+    mutationFn: ({ orderIds, plannedDate }: { orderIds: string[]; plannedDate?: string }) =>
+      routesApi.optimize(orderIds, plannedDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -58,15 +65,16 @@ export function useDeleteRoute() {
 
 /**
  * As transições da rota mexem em pedido, motorista e veículo ao mesmo tempo,
- * então invalidamos as quatro listas: deixar qualquer uma delas velha faz a
- * tela mostrar um motorista disponível que acabou de sair para a rua.
+ * então invalidamos as quatro listas e as telas de execução em campo: deixar
+ * qualquer uma delas velha faz a tela mostrar um motorista disponível que
+ * acabou de sair para a rua, ou uma rota encerrada ainda "ao vivo".
  */
 function useRouteTransition(mutationFn: (id: string) => Promise<unknown>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
     onSuccess: () => {
-      for (const key of [QUERY_KEY, ["orders"], ["drivers"], ["vehicles"]]) {
+      for (const key of [QUERY_KEY, ["orders"], ["drivers"], ["vehicles"], ...FIELD_KEYS]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
     },
@@ -83,4 +91,23 @@ export function useCompleteRoute() {
 
 export function useCancelRoute() {
   return useRouteTransition((id) => routesApi.cancel(id));
+}
+
+/** Rota nova a partir das paradas que uma rota cancelada ainda devia. */
+export function useDuplicateRoute() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: { plannedDate?: string; driverId?: string; vehicleId?: string };
+    }) => routesApi.duplicate(id, input),
+    onSuccess: () => {
+      for (const key of [QUERY_KEY, ["orders"], ...FIELD_KEYS]) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
 }

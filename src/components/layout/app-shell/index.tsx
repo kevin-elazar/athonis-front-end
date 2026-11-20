@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Package, Route as RouteIcon, Search, UserPlus } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -15,11 +22,43 @@ import type { MenuAction } from "@/components/ui/dropdown-menu";
 import { NAV_ITEMS } from "@/constants/navigation";
 import { logout } from "@/lib/auth/authentication";
 import { useOrders } from "@/features/orders/hooks";
+import { CurrentUserProvider } from "@/features/auth/current-user";
+
+/**
+ * Menu recolhido ou aberto: preferência só deste navegador. No servidor (e
+ * sem acesso ao armazenamento) vale o padrão, aberto.
+ */
+const SIDEBAR_KEY = "athonis.sidebar.collapsed";
+const sidebarListeners = new Set<() => void>();
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSidebarCollapsed(value: boolean) {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, value ? "1" : "0");
+  } catch {
+    // Sem armazenamento: a troca ainda vale até recarregar.
+  }
+  sidebarListeners.forEach((listener) => listener());
+}
+
+function subscribeSidebar(listener: () => void) {
+  sidebarListeners.add(listener);
+  return () => sidebarListeners.delete(listener);
+}
 
 export type AppShellProps = {
   children: ReactNode;
   userName: string;
   userEmail?: string;
+  /** Papel do usuário na sessão ("admin", ...), para a tela esconder o que ele não pode usar. */
+  userRole?: string;
   /** Nome fantasia da empresa; cai no padrão quando ainda não há cadastro. */
   companyName?: string;
   userMenuItems?: MenuAction[];
@@ -30,14 +69,36 @@ export function AppShell({
   children,
   userName,
   userEmail,
+  userRole,
   companyName = "ATHONIS",
   userMenuItems,
   onUserMenuSelect,
 }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(true);
+  const collapsed = useSyncExternalStore(
+    subscribeSidebar,
+    readSidebarCollapsed,
+    () => false,
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // Ctrl+K (ou Cmd+K no Mac) abre a busca, como o atalho mostrado no topo.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  function toggleCollapsed() {
+    writeSidebarCollapsed(!collapsed);
+  }
+
   const router = useRouter();
   const pathname = usePathname();
   const { data: orders } = useOrders();
@@ -128,7 +189,7 @@ export function AppShell({
       <Sidebar
         brandName={companyName}
         collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((current) => !current)}
+        onToggleCollapsed={toggleCollapsed}
         className="hidden lg:flex"
       />
 
@@ -159,7 +220,9 @@ export function AppShell({
         {/* Sem padding aqui de propósito — é nele que o CommandMenu é portado
             (`inset-0` precisa colar nas bordas, sem a folga do p-6 do main). */}
         <div ref={contentRef} className="relative flex-1 overflow-hidden">
-          <main className="h-full overflow-y-auto p-6">{children}</main>
+          <main className="h-full overflow-y-auto p-6 lg:p-8">
+            <CurrentUserProvider role={userRole}>{children}</CurrentUserProvider>
+          </main>
 
           <CommandMenu
             open={commandOpen}

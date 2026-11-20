@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt";
 import { isValidPlate } from "@/lib/utils/masks";
 
 const ANO_MINIMO = 1950;
